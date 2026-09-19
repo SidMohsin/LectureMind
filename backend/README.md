@@ -18,3 +18,6 @@ uvicorn app.main:app --reload
 API docs available at http://localhost:8000/docs once running.
 
 See the root README.md for full installation and usage instructions.
+
+Git workflow practice
+completed.
