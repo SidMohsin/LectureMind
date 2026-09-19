@@ -1,0 +1,10 @@
+[
+  {
+    "query": "What is supervised learning?",
+    "relevant_chunk_ids": ["REPLACE_WITH_LECTURE_ID_chunk_0", "REPLACE_WITH_LECTURE_ID_chunk_1"]
+  },
+  {
+    "query": "How does gradient descent work?",
+    "relevant_chunk_ids": ["REPLACE_WITH_LECTURE_ID_chunk_2"]
+  }
+]

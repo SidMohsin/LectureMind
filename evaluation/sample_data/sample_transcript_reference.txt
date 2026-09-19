@@ -1,0 +1,2 @@
+Machine learning is a subset of artificial intelligence that allows systems to learn from data.
+Supervised learning uses labeled data to train models that map inputs to outputs.

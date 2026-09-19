@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+*.egg-info/
+
+# Env
+.env
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Data (generated at runtime — keep folder structure via .gitkeep, ignore contents)
+backend/data/uploads/*
+backend/data/audio/*
+backend/data/transcripts/*
+backend/data/summaries/*
+backend/data/chroma/*
+backend/data/metadata/*
+!backend/data/**/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

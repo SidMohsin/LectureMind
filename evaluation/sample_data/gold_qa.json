@@ -1,0 +1,10 @@
+[
+  {
+    "question": "What is supervised learning?",
+    "reference_answer": "Supervised learning is a type of machine learning where a model is trained on labeled data, learning to map inputs to known outputs."
+  },
+  {
+    "question": "What is the difference between classification and regression?",
+    "reference_answer": "Classification predicts discrete categories or classes, while regression predicts continuous numerical values."
+  }
+]
