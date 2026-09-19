@@ -2,9 +2,9 @@
 
 **Using Whisper, Retrieval-Augmented Generation and Large Language Models**
 
-M.Tech Minor Project (MDS-393) — Mo Mohsin Siddique (25MDS021), Department of
+M.Tech Minor Project — Mo Mohsin Siddique , Department of
 Computer Engineering, Jamia Millia Islamia, under the supervision of
-Prof. Tanvir Ahmad.
+Dr. Shahzad Alam.
 
 ---
 
