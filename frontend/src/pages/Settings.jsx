@@ -36,7 +36,6 @@ export default function Settings() {
       <p className="page-subtitle">
         These values reflect the backend's current environment configuration
         (<code>backend/.env</code>). To change them, edit that file and restart the backend.
-        No API keys or secrets are ever shown here.
       </p>
 
       <div className="card">
