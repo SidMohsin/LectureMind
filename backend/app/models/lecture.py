@@ -3,7 +3,8 @@ SQLAlchemy ORM models for LectureMind.
 """
 import uuid
 import datetime as dt
-from sqlalchemy import Column, String, DateTime, Float, Text, Integer
+from sqlalchemy import Column, String, DateTime, Float, Text, Integer, ForeignKey
+from sqlalchemy.orm import relationship
 from app.database import Base
 
 
@@ -15,6 +16,7 @@ class Lecture(Base):
     __tablename__ = "lectures"
 
     lecture_id = Column(String, primary_key=True, default=gen_id)
+    user_id = Column(String, ForeignKey("users.user_id"), nullable=False, index=True)
     original_filename = Column(String, nullable=False)
     stored_filename = Column(String, nullable=False)
     file_type = Column(String, nullable=False)  # video | audio
@@ -38,14 +40,22 @@ class Lecture(Base):
     processing_started_at = Column(DateTime, nullable=True)
     processing_completed_at = Column(DateTime, nullable=True)
 
+    # Relationships
+    chat_logs = relationship("ChatLog", back_populates="lecture", cascade="all, delete-orphan")
+    owner = relationship("User", backref="lectures")
+
 
 class ChatLog(Base):
     __tablename__ = "chat_logs"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    lecture_id = Column(String, index=True)
+    lecture_id = Column(String, ForeignKey("lectures.lecture_id"), nullable=False, index=True)
+    user_id = Column(String, ForeignKey("users.user_id"), nullable=False, index=True)
     question = Column(Text)
     answer = Column(Text)
     sources_json = Column(Text)
     latency_ms = Column(Float)
     created_at = Column(DateTime, default=dt.datetime.utcnow)
+
+    # Relationships
+    lecture = relationship("Lecture", back_populates="chat_logs")

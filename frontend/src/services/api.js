@@ -3,7 +3,27 @@
 
 export const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
 
-async function handleResponse(res) {
+const TOKEN_KEY = 'lecturemind-token'
+
+export function getStoredToken() {
+  return localStorage.getItem(TOKEN_KEY)
+}
+
+export function setStoredToken(token) {
+  localStorage.setItem(TOKEN_KEY, token)
+}
+
+export function clearStoredToken() {
+  localStorage.removeItem(TOKEN_KEY)
+}
+
+function authHeaders() {
+  const token = getStoredToken()
+  if (token) return { Authorization: `Bearer ${token}` }
+  return {}
+}
+
+export async function handleResponse(res) {
   if (!res.ok) {
     let detail = `Request failed with status ${res.status}`
     try {
@@ -23,9 +43,12 @@ export async function uploadLecture(file, onProgress) {
   const formData = new FormData()
   formData.append('file', file)
 
+  const token = getStoredToken()
+
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('POST', `${API_BASE}/api/lectures/upload`)
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
     xhr.upload.onprogress = (e) => {
       if (onProgress && e.lengthComputable) {
         onProgress(Math.round((e.loaded / e.total) * 100))
@@ -49,56 +72,110 @@ export async function uploadLecture(file, onProgress) {
 }
 
 export async function startProcessing(lectureId) {
-  const res = await fetch(`${API_BASE}/api/lectures/${lectureId}/process`, { method: 'POST' })
+  const res = await fetch(`${API_BASE}/api/lectures/${lectureId}/process`, {
+    method: 'POST',
+    headers: authHeaders(),
+  })
   return handleResponse(res)
 }
 
 export async function getStatus(lectureId) {
-  const res = await fetch(`${API_BASE}/api/lectures/${lectureId}/status`)
+  const res = await fetch(`${API_BASE}/api/lectures/${lectureId}/status`, {
+    headers: authHeaders(),
+  })
   return handleResponse(res)
 }
 
 export async function getTranscript(lectureId) {
-  const res = await fetch(`${API_BASE}/api/lectures/${lectureId}/transcript`)
+  const res = await fetch(`${API_BASE}/api/lectures/${lectureId}/transcript`, {
+    headers: authHeaders(),
+  })
   return handleResponse(res)
 }
 
 export async function getSummary(lectureId) {
-  const res = await fetch(`${API_BASE}/api/lectures/${lectureId}/summary`)
+  const res = await fetch(`${API_BASE}/api/lectures/${lectureId}/summary`, {
+    headers: authHeaders(),
+  })
   return handleResponse(res)
 }
 
 export async function getKeywords(lectureId) {
-  const res = await fetch(`${API_BASE}/api/lectures/${lectureId}/keywords`)
+  const res = await fetch(`${API_BASE}/api/lectures/${lectureId}/keywords`, {
+    headers: authHeaders(),
+  })
   return handleResponse(res)
 }
 
 export async function askQuestion(lectureId, question, topK) {
   const res = await fetch(`${API_BASE}/api/lectures/${lectureId}/chat`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify({ question, top_k: topK }),
   })
   return handleResponse(res)
 }
 
+export async function getChatHistory(lectureId) {
+  const res = await fetch(
+    `${API_BASE}/api/lectures/${lectureId}/chat/history`,
+    { headers: authHeaders() }
+  )
+  return handleResponse(res)
+}
+
+export async function clearChatHistory(lectureId) {
+  const res = await fetch(
+    `${API_BASE}/api/lectures/${lectureId}/chat/history`,
+    {
+      method: 'DELETE',
+      headers: authHeaders(),
+    }
+  )
+  return handleResponse(res)
+}
+
+export async function deleteChatHistoryItem(lectureId, logId) {
+  const res = await fetch(`${API_BASE}/api/lectures/${lectureId}/chat/history/${logId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  })
+  return handleResponse(res)
+}
+
 export async function listLectures() {
-  const res = await fetch(`${API_BASE}/api/lectures`)
+  const res = await fetch(`${API_BASE}/api/lectures`, {
+    headers: authHeaders(),
+  })
+  return handleResponse(res)
+}
+
+export async function searchLectures(query) {
+  const res = await fetch(`${API_BASE}/api/lectures/search?q=${encodeURIComponent(query)}`, {
+    headers: authHeaders(),
+  })
   return handleResponse(res)
 }
 
 export async function getLecture(lectureId) {
-  const res = await fetch(`${API_BASE}/api/lectures/${lectureId}`)
+  const res = await fetch(`${API_BASE}/api/lectures/${lectureId}`, {
+    headers: authHeaders(),
+  })
   return handleResponse(res)
 }
 
 export async function deleteLecture(lectureId) {
-  const res = await fetch(`${API_BASE}/api/lectures/${lectureId}`, { method: 'DELETE' })
+  const res = await fetch(`${API_BASE}/api/lectures/${lectureId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  })
   return handleResponse(res)
 }
 
 export async function getStats() {
-  const res = await fetch(`${API_BASE}/api/stats`)
+  const res = await fetch(`${API_BASE}/api/stats`, {
+    headers: authHeaders(),
+  })
   return handleResponse(res)
 }
 

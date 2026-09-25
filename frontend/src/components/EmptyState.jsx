@@ -1,11 +1,13 @@
-export default function EmptyState({ icon = '—', title, description, actionLabel, onAction }) {
+export default function EmptyState({ title, description, actionLabel, onAction }) {
   return (
     <div className="empty-state">
-      <div className="empty-state-icon" aria-hidden="true">{icon}</div>
-      <h3>{title}</h3>
-      {description && <p>{description}</p>}
+      <div className="empty-icon">○</div>
+      <p className="empty-title">{title}</p>
+      {description && <p className="empty-desc">{description}</p>}
       {actionLabel && onAction && (
-        <button className="btn-primary btn-inline" onClick={onAction}>{actionLabel}</button>
+        <button className="btn-primary btn-small" style={{ marginTop: 12 }} onClick={onAction}>
+          {actionLabel}
+        </button>
       )}
     </div>
   )

@@ -17,6 +17,31 @@ class Settings(BaseSettings):
     ENV: str = Field(default="development", env="ENV")
     CORS_ORIGINS: str = Field(default="http://localhost:5173,http://127.0.0.1:5173", env="CORS_ORIGINS")
 
+    # --- Authentication ---
+    SECRET_KEY: str = Field(default="change-me-in-production-use-a-long-random-string", env="SECRET_KEY")
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=1440, env="ACCESS_TOKEN_EXPIRE_MINUTES")  # 24h
+
+    # --- OTP ---
+    OTP_LENGTH: int = Field(default=6, env="OTP_LENGTH")
+    OTP_EXPIRE_MINUTES: int = Field(default=10, env="OTP_EXPIRE_MINUTES")
+    OTP_MAX_ATTEMPTS: int = Field(default=5, env="OTP_MAX_ATTEMPTS")
+    OTP_RESEND_COOLDOWN_SECONDS: int = Field(default=60, env="OTP_RESEND_COOLDOWN_SECONDS")
+
+    # --- Email / SMS provider (abstraction) ---
+    EMAIL_PROVIDER: str = Field(default="console", env="EMAIL_PROVIDER")  # console | smtp | sendgrid
+    EMAIL_API_KEY: str = Field(default="", env="EMAIL_API_KEY")
+    EMAIL_FROM: str = Field(default="noreply@lecturemind.app", env="EMAIL_FROM")
+    SMTP_HOST: str = Field(default="", env="SMTP_HOST")
+    SMTP_PORT: int = Field(default=587, env="SMTP_PORT")
+    SMTP_USER: str = Field(default="", env="SMTP_USER")
+    SMTP_PASSWORD: str = Field(default="", env="SMTP_PASSWORD")
+
+    SMS_PROVIDER: str = Field(default="console", env="SMS_PROVIDER")  # console | twilio
+    SMS_API_KEY: str = Field(default="", env="SMS_API_KEY")
+    SMS_API_SECRET: str = Field(default="", env="SMS_API_SECRET")
+    SMS_FROM: str = Field(default="", env="SMS_FROM")
+
     # --- Storage paths ---
     DATA_DIR: str = str(PROJECT_ROOT / "backend" / "data")
     UPLOAD_DIR: str = str(PROJECT_ROOT / "backend" / "data" / "uploads")
@@ -56,7 +81,7 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = Field(default="gpt-4o-mini", env="OPENAI_MODEL")
 
     GROQ_API_KEY: str = Field(default="", env="GROQ_API_KEY")
-    GROQ_MODEL: str = Field(default="llama-3.1-8b-instant", env="GROQ_MODEL")
+    GROQ_MODEL: str = Field(default="openai/gpt-oss-20b", env="GROQ_MODEL")
 
     LLM_TIMEOUT_SECONDS: int = Field(default=120, env="LLM_TIMEOUT_SECONDS")
 

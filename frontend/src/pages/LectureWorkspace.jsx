@@ -14,7 +14,7 @@ import StatusBadge from '../components/StatusBadge'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { formatDuration, formatDate } from '../services/format'
 
-const TABS = ['Transcript', 'Summary', 'Keywords', 'Chat']
+const TABS = ['Transcript', 'Summary', 'Keywords', 'Ask']
 
 export default function LectureWorkspace({ lectureId }) {
   const { navigate, triggerRefresh } = useApp()
@@ -62,15 +62,12 @@ export default function LectureWorkspace({ lectureId }) {
   const fetchResults = useCallback(async () => {
     setTranscriptLoading(true); setSummaryLoading(true); setKeywordsLoading(true)
     setTranscriptError(null); setSummaryError(null); setKeywordsError(null)
-
     try { setTranscript(await getTranscript(lectureId)) }
     catch (e) { setTranscriptError(e.message) }
     finally { setTranscriptLoading(false) }
-
     try { setSummary(await getSummary(lectureId)) }
     catch (e) { setSummaryError(e.message) }
     finally { setSummaryLoading(false) }
-
     try { const k = await getKeywords(lectureId); setKeywords(k.keywords) }
     catch (e) { setKeywordsError(e.message) }
     finally { setKeywordsLoading(false) }
@@ -86,7 +83,7 @@ export default function LectureWorkspace({ lectureId }) {
           clearInterval(pollRef.current)
           triggerRefresh()
           if (s.status === 'completed') {
-            const full = await loadLecture()
+            await loadLecture()
             fetchResults()
           }
         }
@@ -99,22 +96,30 @@ export default function LectureWorkspace({ lectureId }) {
   useEffect(() => {
     setTranscript(null); setSummary(null); setKeywords(null)
     setActiveTab('Transcript'); setTranscriptSearch(''); setCurrentTime(0)
-
     loadLecture().then((l) => {
       if (!l) return
       const processingStatuses = new Set([
         'uploaded', 'queued', 'extracting_audio', 'transcribing', 'cleaning',
         'chunking', 'embedding', 'indexing', 'summarizing', 'extracting_keywords',
       ])
-      if (l.status === 'completed') {
-        fetchResults()
-      } else if (processingStatuses.has(l.status)) {
-        pollStatus()
-      }
+      if (l.status === 'completed') fetchResults()
+      else if (processingStatuses.has(l.status)) pollStatus()
     })
-
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [lectureId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const storageKey = `lecturemind:seek:${lectureId}`
+    const target = sessionStorage.getItem(storageKey)
+    if (!target || lecture?.status !== 'completed') return
+    const seconds = Number(target)
+    sessionStorage.removeItem(storageKey)
+    if (!Number.isFinite(seconds)) return
+    setActiveTab('Transcript')
+    setCurrentTime(seconds)
+    const timer = setTimeout(() => playerRef.current?.seek(seconds), 100)
+    return () => clearTimeout(timer)
+  }, [lecture, lectureId])
 
   function handleSeek(seconds) {
     if (playerRef.current) playerRef.current.seek(seconds)
@@ -168,19 +173,24 @@ export default function LectureWorkspace({ lectureId }) {
     const blob = new Blob([content], { type: mime })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    a.href = url; a.download = filename
+    document.body.appendChild(a); a.click()
+    document.body.removeChild(a); URL.revokeObjectURL(url)
   }
 
   if (loadingLecture && !lecture) {
-    return <div className="card"><p className="hint">Loading lecture…</p></div>
+    return (
+      <div className="page-workspace">
+        <p className="hint" style={{ paddingTop: 40, textAlign: 'center' }}>Loading lecture…</p>
+      </div>
+    )
   }
   if (loadError && !lecture) {
-    return <div className="card"><p className="error-banner">{loadError}</p></div>
+    return (
+      <div className="page-workspace">
+        <p className="error-banner">{loadError}</p>
+      </div>
+    )
   }
   if (!lecture) return null
 
@@ -194,30 +204,50 @@ export default function LectureWorkspace({ lectureId }) {
 
   return (
     <div className="page-workspace">
+
+      {/* Header */}
       <div className="workspace-header">
-        <div>
-          <button className="link-back" onClick={() => navigate('library')}>← Back to My Lectures</button>
-          <h1>{lecture.original_filename}</h1>
-          <div className="workspace-meta">
-            <StatusBadge status={lecture.status} />
-            <span>{lecture.file_type === 'video' ? 'Video' : 'Audio'}</span>
-            <span>{formatDuration(lecture.duration_seconds)}</span>
-            <span>{formatDate(lecture.upload_time)}</span>
+        <button className="link-back" onClick={() => navigate('library')}>
+          ← Library
+        </button>
+
+        <div className="workspace-title-row">
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h1 className="workspace-title">{lecture.original_filename}</h1>
+            <div className="workspace-meta">
+              <StatusBadge status={lecture.status} />
+              <span className="workspace-meta-dot">·</span>
+              <span className="workspace-meta-item">
+                {lecture.file_type === 'video' ? 'Video' : 'Audio'}
+              </span>
+              <span className="workspace-meta-dot">·</span>
+              <span className="workspace-meta-item">{formatDuration(lecture.duration_seconds)}</span>
+              <span className="workspace-meta-dot">·</span>
+              <span className="workspace-meta-item">{formatDate(lecture.upload_time)}</span>
+            </div>
           </div>
-        </div>
-        <div className="workspace-actions">
-          {isCompleted && transcript && (
-            <>
-              <button className="btn-secondary btn-small" onClick={() => handleDownloadTranscript('txt')}>Download .txt</button>
-              <button className="btn-secondary btn-small" onClick={() => handleDownloadTranscript('json')}>Download .json</button>
-            </>
-          )}
-          <button className="btn-danger btn-small" onClick={() => setConfirmDelete(true)}>Delete</button>
+
+          <div className="workspace-actions">
+            {isCompleted && transcript && (
+              <>
+                <button className="btn-secondary btn-small" onClick={() => handleDownloadTranscript('txt')}>
+                  .txt
+                </button>
+                <button className="btn-secondary btn-small" onClick={() => handleDownloadTranscript('json')}>
+                  .json
+                </button>
+              </>
+            )}
+            <button className="btn-danger btn-small" onClick={() => setConfirmDelete(true)}>
+              Delete
+            </button>
+          </div>
         </div>
       </div>
 
-      {loadError && <div className="error-banner">{loadError}</div>}
+      {loadError && <div className="error-banner" style={{ marginBottom: 20 }}>{loadError}</div>}
 
+      {/* Processing state */}
       {(isProcessing || isFailed) && (
         <ProcessingStages
           status={lecture.status}
@@ -227,24 +257,24 @@ export default function LectureWorkspace({ lectureId }) {
         />
       )}
 
+      {/* Completed workspace */}
       {isCompleted && (
         <>
           {lecture.has_media && (
-            <div className="card media-card">
-              <MediaPlayer
-                ref={playerRef}
-                lectureId={lectureId}
-                fileType={lecture.file_type}
-                onTimeUpdate={setCurrentTime}
-              />
-            </div>
+            <MediaPlayer
+              ref={playerRef}
+              lectureId={lectureId}
+              fileType={lecture.file_type}
+              onTimeUpdate={setCurrentTime}
+            />
           )}
 
-          <div className="tabs">
+          {/* Tab navigation */}
+          <div className="workspace-tabs">
             {TABS.map((tab) => (
               <button
                 key={tab}
-                className={`tab-btn ${activeTab === tab ? 'tab-active' : ''}`}
+                className={`workspace-tab ${activeTab === tab ? 'workspace-tab-active' : ''}`}
                 onClick={() => setActiveTab(tab)}
               >
                 {tab}
@@ -252,42 +282,41 @@ export default function LectureWorkspace({ lectureId }) {
             ))}
           </div>
 
-          <div className="tab-content">
-            {activeTab === 'Transcript' && (
-              <TranscriptPanel
-                transcript={transcript}
-                loading={transcriptLoading}
-                error={transcriptError}
-                onRetry={fetchResults}
-                currentTime={currentTime}
-                onSeek={handleSeek}
-                searchQuery={transcriptSearch}
-                onSearchChange={setTranscriptSearch}
-              />
-            )}
-            {activeTab === 'Summary' && (
-              <SummaryPanel summary={summary} loading={summaryLoading} error={summaryError} onRetry={fetchResults} />
-            )}
-            {activeTab === 'Keywords' && (
-              <KeywordsPanel
-                keywords={keywords}
-                loading={keywordsLoading}
-                error={keywordsError}
-                onRetry={fetchResults}
-                onKeywordClick={handleKeywordClick}
-              />
-            )}
-            {activeTab === 'Chat' && (
-              <ChatPanel lectureId={lectureId} lectureReady={isCompleted} onSeek={handleSeek} />
-            )}
-          </div>
+          {/* Tab content */}
+          {activeTab === 'Transcript' && (
+            <TranscriptPanel
+              transcript={transcript}
+              loading={transcriptLoading}
+              error={transcriptError}
+              onRetry={fetchResults}
+              currentTime={currentTime}
+              onSeek={handleSeek}
+              searchQuery={transcriptSearch}
+              onSearchChange={setTranscriptSearch}
+            />
+          )}
+          {activeTab === 'Summary' && (
+            <SummaryPanel summary={summary} loading={summaryLoading} error={summaryError} onRetry={fetchResults} />
+          )}
+          {activeTab === 'Keywords' && (
+            <KeywordsPanel
+              keywords={keywords}
+              loading={keywordsLoading}
+              error={keywordsError}
+              onRetry={fetchResults}
+              onKeywordClick={handleKeywordClick}
+            />
+          )}
+          {activeTab === 'Ask' && (
+            <ChatPanel lectureId={lectureId} lectureReady={isCompleted} onSeek={handleSeek} />
+          )}
         </>
       )}
 
       <ConfirmDialog
         open={confirmDelete}
         title="Delete this lecture?"
-        message={`"${lecture.original_filename}" and all of its transcript, summary, keywords, and indexed data will be permanently deleted. This cannot be undone.`}
+        message={`"${lecture.original_filename}" and all its transcript, summary, keywords, and indexed data will be permanently deleted.`}
         confirmLabel={deleting ? 'Deleting…' : 'Delete'}
         danger
         onConfirm={handleDelete}

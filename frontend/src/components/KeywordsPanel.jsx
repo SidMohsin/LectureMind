@@ -6,29 +6,26 @@ import { SkeletonBlock } from './Skeleton'
 export default function KeywordsPanel({ keywords, loading, error, onRetry, onKeywordClick }) {
   const [activeKeyword, setActiveKeyword] = useState(null)
 
-  if (loading) {
-    return (
-      <div className="card">
-        <h3>Keywords</h3>
-        <SkeletonBlock label="Extracting keywords…" />
-      </div>
-    )
-  }
-  if (error) {
-    return (
-      <div className="card">
-        <h3>Keywords</h3>
-        <ErrorState message={error} actionLabel={onRetry ? 'Retry' : undefined} onAction={onRetry} />
-      </div>
-    )
-  }
-  if (!keywords || keywords.length === 0) {
-    return (
-      <div className="card">
-        <EmptyState title="No keywords available" description="Important terms extracted from the lecture will appear here once processing completes." />
-      </div>
-    )
-  }
+  if (loading) return (
+    <div className="keywords-area">
+      <SkeletonBlock label="Extracting keywords…" />
+    </div>
+  )
+
+  if (error) return (
+    <div className="keywords-area">
+      <ErrorState message={error} actionLabel={onRetry ? 'Retry' : undefined} onAction={onRetry} />
+    </div>
+  )
+
+  if (!keywords || keywords.length === 0) return (
+    <div className="keywords-area">
+      <EmptyState
+        title="No keywords yet"
+        description="Key concepts from the lecture will appear here once processing completes."
+      />
+    </div>
+  )
 
   function handleClick(k) {
     setActiveKeyword(k)
@@ -36,17 +33,20 @@ export default function KeywordsPanel({ keywords, loading, error, onRetry, onKey
   }
 
   return (
-    <div className="card">
-      <h3>Important Keywords</h3>
-      <p className="hint">Click a keyword to search for it in the transcript.</p>
-      <div className="keyword-chips">
+    <div className="keywords-area">
+      <h3>Key concepts</h3>
+      <p className="hint" style={{ marginBottom: 20 }}>
+        Click a term to search for it in the transcript.
+      </p>
+      <div className="keyword-index">
         {keywords.map((k, i) => (
           <button
             key={i}
-            className={`keyword-chip ${activeKeyword === k ? 'keyword-chip-active' : ''}`}
+            className={`keyword-item ${activeKeyword === k ? 'keyword-item-active' : ''}`}
             onClick={() => handleClick(k)}
           >
-            {k}
+            <span>{k}</span>
+            <span className="keyword-arrow">→</span>
           </button>
         ))}
       </div>

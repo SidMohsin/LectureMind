@@ -1,6 +1,9 @@
 """
 REST API routes for LectureMind: upload, processing, status, transcript,
 summary, keywords, chat and listing lectures.
+
+All endpoints now require authentication and enforce lecture ownership:
+a user can only access their own lectures.
 """
 import os
 import re
@@ -9,17 +12,20 @@ import shutil
 import mimetypes
 import datetime as dt
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Depends, Request
+from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Depends, Request, Query
 from fastapi.responses import StreamingResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db, SessionLocal
 from app.models.lecture import Lecture, ChatLog
+from app.models.user import User
 from app.schemas.lecture import (
     LectureUploadResponse, LectureStatusResponse, TranscriptResponse,
     SummaryResponse, KeywordsResponse, ChatRequest, ChatResponse,
-    LectureListResponse, LectureListItem, SourceChunk,
+    ChatHistoryResponse, ChatHistoryItem,
+    LectureListResponse, LectureListItem, LectureSearchResponse, LectureSearchResult, SourceChunk,
     LectureDetailResponse, StatsResponse, ConfigResponse, DeleteResponse,
 )
 from app.utils.file_validation import validate_upload, safe_filename, FileValidationError
@@ -30,19 +36,28 @@ from app.services.llm_provider import LLMError, LLMNotConfiguredError
 from app.services.audio import AudioExtractionError
 from app.services.whisper_service import TranscriptionError
 from app.services.embeddings import EmbeddingError
+from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/api", tags=["lectures"])
 
 
-def _lecture_or_404(db: Session, lecture_id: str) -> Lecture:
+def _lecture_or_404(db: Session, lecture_id: str, user: User) -> Lecture:
+    """Fetch a lecture and enforce ownership. Returns 404 if not found or not owned."""
     lecture = db.query(Lecture).filter(Lecture.lecture_id == lecture_id).first()
     if lecture is None:
+        raise HTTPException(status_code=404, detail=f"Lecture '{lecture_id}' not found.")
+    if lecture.user_id != user.user_id:
+        # Return 404 instead of 403 to not reveal that the lecture exists
         raise HTTPException(status_code=404, detail=f"Lecture '{lecture_id}' not found.")
     return lecture
 
 
 @router.post("/lectures/upload", response_model=LectureUploadResponse)
-async def upload_lecture(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def upload_lecture(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     try:
         file_type = await validate_upload(file)
     except FileValidationError as e:
@@ -59,6 +74,7 @@ async def upload_lecture(file: UploadFile = File(...), db: Session = Depends(get
         raise HTTPException(status_code=500, detail=f"Failed to save uploaded file: {e}")
 
     lecture = Lecture(
+        user_id=current_user.user_id,
         original_filename=file.filename,
         stored_filename=stored_name,
         file_type=file_type,
@@ -81,8 +97,13 @@ async def upload_lecture(file: UploadFile = File(...), db: Session = Depends(get
 
 
 @router.post("/lectures/{lecture_id}/process", response_model=LectureStatusResponse)
-def process_lecture_endpoint(lecture_id: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    lecture = _lecture_or_404(db, lecture_id)
+def process_lecture_endpoint(
+    lecture_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    lecture = _lecture_or_404(db, lecture_id, current_user)
 
     if lecture.status in ("extracting_audio", "transcribing", "cleaning", "chunking",
                            "embedding", "indexing", "summarizing", "extracting_keywords"):
@@ -104,8 +125,12 @@ def process_lecture_endpoint(lecture_id: str, background_tasks: BackgroundTasks,
 
 
 @router.get("/lectures/{lecture_id}/status", response_model=LectureStatusResponse)
-def get_status(lecture_id: str, db: Session = Depends(get_db)):
-    lecture = _lecture_or_404(db, lecture_id)
+def get_status(
+    lecture_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    lecture = _lecture_or_404(db, lecture_id, current_user)
     return LectureStatusResponse(
         lecture_id=lecture.lecture_id,
         status=lecture.status,
@@ -116,8 +141,12 @@ def get_status(lecture_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/lectures/{lecture_id}/transcript", response_model=TranscriptResponse)
-def get_transcript(lecture_id: str, db: Session = Depends(get_db)):
-    lecture = _lecture_or_404(db, lecture_id)
+def get_transcript(
+    lecture_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    lecture = _lecture_or_404(db, lecture_id, current_user)
     if not lecture.transcript_path or not os.path.exists(lecture.transcript_path):
         raise HTTPException(status_code=404, detail="Transcript not available yet for this lecture.")
     with open(lecture.transcript_path, "r", encoding="utf-8") as f:
@@ -131,8 +160,12 @@ def get_transcript(lecture_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/lectures/{lecture_id}/summary", response_model=SummaryResponse)
-def get_summary(lecture_id: str, db: Session = Depends(get_db)):
-    lecture = _lecture_or_404(db, lecture_id)
+def get_summary(
+    lecture_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    lecture = _lecture_or_404(db, lecture_id, current_user)
     if not lecture.summary_json:
         raise HTTPException(status_code=404, detail="Summary not available yet for this lecture.")
     data = json.loads(lecture.summary_json)
@@ -146,16 +179,25 @@ def get_summary(lecture_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/lectures/{lecture_id}/keywords", response_model=KeywordsResponse)
-def get_keywords(lecture_id: str, db: Session = Depends(get_db)):
-    lecture = _lecture_or_404(db, lecture_id)
+def get_keywords(
+    lecture_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    lecture = _lecture_or_404(db, lecture_id, current_user)
     if not lecture.keywords_json:
         raise HTTPException(status_code=404, detail="Keywords not available yet for this lecture.")
     return KeywordsResponse(lecture_id=lecture_id, keywords=json.loads(lecture.keywords_json))
 
 
 @router.post("/lectures/{lecture_id}/chat", response_model=ChatResponse)
-def chat_with_lecture(lecture_id: str, req: ChatRequest, db: Session = Depends(get_db)):
-    lecture = _lecture_or_404(db, lecture_id)
+def chat_with_lecture(
+    lecture_id: str,
+    req: ChatRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    lecture = _lecture_or_404(db, lecture_id, current_user)
     if lecture.status != "completed":
         raise HTTPException(
             status_code=409,
@@ -175,6 +217,7 @@ def chat_with_lecture(lecture_id: str, req: ChatRequest, db: Session = Depends(g
 
     log = ChatLog(
         lecture_id=lecture_id,
+        user_id=current_user.user_id,
         question=req.question,
         answer=result["answer"],
         sources_json=json.dumps(result["sources"]),
@@ -193,10 +236,171 @@ def chat_with_lecture(lecture_id: str, req: ChatRequest, db: Session = Depends(g
         latency_ms=result["latency_ms"],
     )
 
+@router.get(
+    "/lectures/{lecture_id}/chat/history",
+    response_model=ChatHistoryResponse
+)
+def get_chat_history(
+    lecture_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _lecture_or_404(db, lecture_id, current_user)
+
+    logs = (
+        db.query(ChatLog)
+        .filter(ChatLog.lecture_id == lecture_id, ChatLog.user_id == current_user.user_id)
+        .order_by(ChatLog.created_at.asc())
+        .all()
+    )
+
+    items = []
+
+    for log in logs:
+        try:
+            sources_data = json.loads(log.sources_json or "[]")
+        except (json.JSONDecodeError, TypeError):
+            sources_data = []
+
+        items.append(
+            ChatHistoryItem(
+                id=log.id,
+                lecture_id=log.lecture_id,
+                question=log.question,
+                answer=log.answer,
+                sources=[
+                    SourceChunk(**source)
+                    for source in sources_data
+                ],
+                latency_ms=log.latency_ms or 0,
+                created_at=(
+                    log.created_at.isoformat()
+                    if log.created_at
+                    else ""
+                ),
+            )
+        )
+
+    return ChatHistoryResponse(
+        lecture_id=lecture_id,
+        items=items,
+    )
+
+@router.delete("/lectures/{lecture_id}/chat/history")
+def clear_chat_history(
+    lecture_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _lecture_or_404(db, lecture_id, current_user)
+
+    deleted = (
+        db.query(ChatLog)
+        .filter(ChatLog.lecture_id == lecture_id, ChatLog.user_id == current_user.user_id)
+        .delete()
+    )
+
+    db.commit()
+
+    return {
+        "lecture_id": lecture_id,
+        "deleted": deleted,
+    }
+
+
+@router.delete("/lectures/{lecture_id}/chat/history/{log_id}")
+def delete_chat_history_item(
+    lecture_id: str,
+    log_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _lecture_or_404(db, lecture_id, current_user)
+    log = db.query(ChatLog).filter(
+        ChatLog.id == log_id,
+        ChatLog.lecture_id == lecture_id,
+        ChatLog.user_id == current_user.user_id,
+    ).first()
+    if not log:
+        raise HTTPException(status_code=404, detail="Question not found.")
+    db.delete(log)
+    db.commit()
+    return {"lecture_id": lecture_id, "deleted": 1}
+
+
+@router.get("/lectures/search", response_model=LectureSearchResponse)
+def search_lectures(
+    q: str = Query(..., min_length=1, max_length=200),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Search an owner's lecture titles, extracted keywords, and transcript segments."""
+    query = q.strip().lower()
+    results = []
+    lectures = db.query(Lecture).filter(Lecture.user_id == current_user.user_id).all()
+    for lecture in lectures:
+        title = lecture.original_filename or ""
+        if query in title.lower():
+            results.append(LectureSearchResult(
+                lecture_id=lecture.lecture_id, original_filename=title,
+                match_type="title", text=title,
+            ))
+
+        try:
+            keywords = json.loads(lecture.keywords_json or "[]")
+        except (TypeError, json.JSONDecodeError):
+            keywords = []
+        matched_keywords = [str(item) for item in keywords if query in str(item).lower()]
+        if matched_keywords:
+            results.append(LectureSearchResult(
+                lecture_id=lecture.lecture_id, original_filename=title,
+                match_type="keyword", text=", ".join(matched_keywords[:4]),
+            ))
+
+        if lecture.transcript_path and os.path.exists(lecture.transcript_path):
+            try:
+                with open(lecture.transcript_path, "r", encoding="utf-8") as f:
+                    segments = json.load(f).get("segments", [])
+                for segment in segments:
+                    text = str(segment.get("text", "")).strip()
+                    if query in text.lower():
+                        results.append(LectureSearchResult(
+                            lecture_id=lecture.lecture_id, original_filename=title,
+                            match_type="transcript", text=text,
+                            start=segment.get("start"), end=segment.get("end"),
+                        ))
+                        if sum(r.lecture_id == lecture.lecture_id for r in results) >= 6:
+                            break
+            except (OSError, json.JSONDecodeError, AttributeError):
+                pass
+    return LectureSearchResponse(results=results[:50])
 
 @router.get("/lectures", response_model=LectureListResponse)
-def list_lectures(db: Session = Depends(get_db)):
-    lectures = db.query(Lecture).order_by(Lecture.upload_time.desc()).all()
+def list_lectures(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    lectures = (
+        db.query(Lecture)
+        .filter(Lecture.user_id == current_user.user_id)
+        .order_by(Lecture.upload_time.desc())
+        .all()
+    )
+
+    lecture_ids = [l.lecture_id for l in lectures]
+
+    question_counts = {}
+    if lecture_ids:
+        question_counts = dict(
+            db.query(
+                ChatLog.lecture_id,
+                func.count(ChatLog.id)
+            )
+            .filter(ChatLog.lecture_id.in_(lecture_ids))
+            .group_by(ChatLog.lecture_id)
+            .all()
+        )
+
     items = [
         LectureListItem(
             lecture_id=l.lecture_id,
@@ -206,15 +410,21 @@ def list_lectures(db: Session = Depends(get_db)):
             upload_time=l.upload_time.isoformat() if l.upload_time else "",
             duration_seconds=l.duration_seconds,
             num_chunks=l.num_chunks or 0,
+            question_count=question_counts.get(l.lecture_id, 0),
         )
         for l in lectures
     ]
+
     return LectureListResponse(lectures=items)
 
 
 @router.get("/lectures/{lecture_id}", response_model=LectureDetailResponse)
-def get_lecture_detail(lecture_id: str, db: Session = Depends(get_db)):
-    lecture = _lecture_or_404(db, lecture_id)
+def get_lecture_detail(
+    lecture_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    lecture = _lecture_or_404(db, lecture_id, current_user)
     return LectureDetailResponse(
         lecture_id=lecture.lecture_id,
         original_filename=lecture.original_filename,
@@ -232,8 +442,12 @@ def get_lecture_detail(lecture_id: str, db: Session = Depends(get_db)):
 
 
 @router.delete("/lectures/{lecture_id}", response_model=DeleteResponse)
-def delete_lecture(lecture_id: str, db: Session = Depends(get_db)):
-    lecture = _lecture_or_404(db, lecture_id)
+def delete_lecture(
+    lecture_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    lecture = _lecture_or_404(db, lecture_id, current_user)
 
     # Remove files on disk (best-effort — a missing file should not block deletion).
     for path in (lecture.raw_media_path, lecture.audio_path, lecture.transcript_path):
@@ -262,12 +476,20 @@ def delete_lecture(lecture_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/lectures/{lecture_id}/media")
-def get_lecture_media(lecture_id: str, request: Request, db: Session = Depends(get_db)):
+def get_lecture_media(
+    lecture_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """
     Streams the original uploaded media file with HTTP Range support, so the
     frontend's <video>/<audio> element can play it and seek within it.
+
+    Authentication is supplied by the standard dependency, which also accepts
+    the browser media URL's `?token=` fallback.
     """
-    lecture = _lecture_or_404(db, lecture_id)
+    lecture = _lecture_or_404(db, lecture_id, current_user)
     path = lecture.raw_media_path
 
     if not path or not os.path.exists(path):
@@ -317,9 +539,16 @@ def get_lecture_media(lecture_id: str, request: Request, db: Session = Depends(g
 
 
 @router.get("/stats", response_model=StatsResponse)
-def get_stats(db: Session = Depends(get_db)):
-    lectures = db.query(Lecture).all()
-    total_questions = db.query(ChatLog).count()
+def get_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    lectures = db.query(Lecture).filter(Lecture.user_id == current_user.user_id).all()
+    lecture_ids = [l.lecture_id for l in lectures]
+
+    total_questions = 0
+    if lecture_ids:
+        total_questions = db.query(ChatLog).filter(ChatLog.lecture_id.in_(lecture_ids)).count()
 
     completed = sum(1 for l in lectures if l.status == "completed")
     failed = sum(1 for l in lectures if l.status == "failed")

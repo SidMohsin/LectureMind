@@ -1,6 +1,6 @@
 """
 SQLite database setup using SQLAlchemy.
-Stores lecture metadata, processing status and results.
+Stores lecture metadata, processing status, results, and user/auth data.
 """
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
@@ -23,5 +23,6 @@ def get_db():
 
 
 def init_db():
-    from app.models import lecture  # noqa: F401  (ensure models are registered)
+    # Import all models so their tables are registered with Base.metadata
+    from app.models import User, OTP, PasswordResetToken, Lecture, ChatLog  # noqa: F401
     Base.metadata.create_all(bind=engine)

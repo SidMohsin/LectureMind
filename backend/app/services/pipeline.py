@@ -98,16 +98,10 @@ def process_lecture(lecture_id: str, db_factory):
 
         # --- Stage 7: Summarization ---
         _set_status(db, lecture, "summarizing", "Generating lecture summary")
-        try:
-            summary = summarizer.generate_summary(full_text)
-        except Exception as e:
-            summary = {
-                "overview": "Summary generation failed.",
-                "main_concepts": [],
-                "important_points": [],
-                "key_takeaways": [],
-            }
-            lecture.error_message = f"Summary generation warning: {e}"
+        # A missing/broken provider is a real processing failure, not a
+        # successful lecture with placeholder AI output. Let the outer handler
+        # retain the actionable provider error in the lecture status.
+        summary = summarizer.generate_summary(full_text)
         summary_path = os.path.join(settings.SUMMARY_DIR, f"{lecture_id}_summary.json")
         with open(summary_path, "w", encoding="utf-8") as f:
             json.dump(summary, f, ensure_ascii=False, indent=2)

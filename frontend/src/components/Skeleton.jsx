@@ -1,14 +1,10 @@
-export function SkeletonLine({ width = '100%' }) {
-  return <div className="skeleton-line" style={{ width }} />
-}
-
 export function SkeletonBlock({ label }) {
   return (
-    <div className="skeleton-block" role="status" aria-live="polite">
-      <SkeletonLine width="70%" />
-      <SkeletonLine width="95%" />
-      <SkeletonLine width="85%" />
-      {label && <span className="skeleton-label">{label}</span>}
+    <div className="skeleton-block">
+      {label && <p className="skeleton-label">{label}</p>}
+      <div className="skeleton-line skeleton-line-long" />
+      <div className="skeleton-line skeleton-line-short" />
+      <div className="skeleton-line skeleton-line-long" style={{ width: '55%' }} />
     </div>
   )
 }

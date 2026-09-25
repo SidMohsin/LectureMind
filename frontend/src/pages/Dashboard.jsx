@@ -1,19 +1,35 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useApp } from '../context/AppContext'
+import { useAuth } from '../context/AuthContext'
 import { listLectures, getStats } from '../services/api'
-import StatCard from '../components/StatCard'
-import LectureRow from '../components/LectureRow'
 import EmptyState from '../components/EmptyState'
 import { SkeletonBlock } from '../components/Skeleton'
-import { formatDuration } from '../services/format'
+import { formatDuration, formatDate } from '../services/format'
+
+const FILE_TYPE_LABEL = { video: 'Video', audio: 'Audio' }
+
+function getGreeting() {
+  const h = new Date().getHours()
+  if (h >= 5 && h < 12) return 'Good morning'
+  if (h >= 12 && h < 17) return 'Good afternoon'
+  return 'Good evening'
+}
 
 export default function Dashboard() {
   const { navigate, refreshToken } = useApp()
+  const { user } = useAuth()
 
   const [lectures, setLectures] = useState(null)
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [greeting, setGreeting] = useState(getGreeting)
+
+  // Update greeting every minute
+  useEffect(() => {
+    const interval = setInterval(() => setGreeting(getGreeting()), 60000)
+    return () => clearInterval(interval)
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -23,7 +39,7 @@ export default function Dashboard() {
       setLectures(listRes.lectures)
       setStats(statsRes)
     } catch (e) {
-      setError(e.message || 'Failed to load dashboard data.')
+      setError(e.message || 'Failed to load data.')
     } finally {
       setLoading(false)
     }
@@ -31,67 +47,146 @@ export default function Dashboard() {
 
   useEffect(() => { load() }, [load, refreshToken])
 
-  const recentLectures = (lectures || []).slice(0, 5)
+  const firstName = user?.name?.split(' ')[0] || 'there'
+  const recentLectures = (lectures || []).slice(0, 6)
+  const featuredLecture = recentLectures[0] || null
 
   return (
     <div className="page-dashboard">
-      <section className="welcome-card">
-        <div>
-          <h1>Welcome to LectureMind</h1>
-          <p>Turn your lectures into searchable knowledge.</p>
-        </div>
-        <div className="welcome-actions">
-          <button className="btn-primary btn-inline" onClick={() => navigate('upload')}>Upload New Lecture</button>
-          <button className="btn-secondary btn-inline" onClick={() => navigate('library')}>View My Lectures</button>
-        </div>
-      </section>
 
-      {loading && (
-        <div className="stats-grid">
-          <SkeletonBlock /><SkeletonBlock /><SkeletonBlock /><SkeletonBlock />
+      {/* Hero greeting */}
+      <div className="dashboard-hero">
+        <div className="dashboard-hero-copy">
+          <p className="dashboard-eyebrow">Your library</p>
+          <h1>{greeting}, {firstName}.</h1>
+          <p className="dashboard-hero-sub">
+            Turn every recording into a study-ready resource.
+          </p>
         </div>
-      )}
+        <button className="dashboard-add-btn" onClick={() => navigate('upload')}>
+          <span className="dashboard-add-btn-plus">+</span>
+          Add lecture
+        </button>
+      </div>
 
-      {!loading && error && (
-        <div className="card"><p className="error-banner">{error}</p></div>
-      )}
-
+      {/* Stats summary — subtle, not cards */}
       {!loading && !error && stats && (
-        <div className="stats-grid">
-          <StatCard label="Total Lectures" value={stats.total_lectures} />
-          <StatCard label="Processed Lectures" value={stats.completed_lectures} />
-          <StatCard label="Total Duration" value={formatDuration(stats.total_duration_seconds)} />
-          <StatCard label="Questions Asked" value={stats.total_questions_asked} />
+        <div className="dashboard-overview">
+          <span>{stats.total_lectures} {stats.total_lectures === 1 ? 'lecture' : 'lectures'}</span>
+          <span className="dashboard-overview-dot">·</span>
+          <span>{formatDuration(stats.total_duration_seconds)} total</span>
         </div>
       )}
 
-      <section className="card">
-        <div className="panel-header-row">
-          <h3>Recent Lectures</h3>
+      {/* Continue learning / Featured */}
+      {!loading && featuredLecture && (
+        <div className="dashboard-featured">
+          <div className="dashboard-section-hdr">
+            <span className="dashboard-section-label">Pick up where you left off</span>
+          </div>
+          <div
+            className="featured-card"
+            role="button"
+            tabIndex={0}
+            onClick={() => navigate('lecture', featuredLecture.lecture_id)}
+            onKeyDown={(e) => { if (e.key === 'Enter') navigate('lecture', featuredLecture.lecture_id) }}
+          >
+            <div>
+              <p className="featured-meta">
+                {FILE_TYPE_LABEL[featuredLecture.file_type] || featuredLecture.file_type}
+                {' · '}
+                {formatDuration(featuredLecture.duration_seconds)}
+              </p>
+              <p className="featured-title">{featuredLecture.original_filename}</p>
+              <div className="featured-sub">
+                <span>Opened {formatDate(featuredLecture.upload_time)}</span>
+                {featuredLecture.question_count > 0 && (
+                  <>
+                    <span className="featured-dot">·</span>
+                    <span>{featuredLecture.question_count} {featuredLecture.question_count === 1 ? 'question asked' : 'questions asked'}</span>
+                  </>
+                )}
+              </div>
+            </div>
+            <button
+              className="featured-continue"
+              tabIndex={-1}
+              onClick={(e) => { e.stopPropagation(); navigate('lecture', featuredLecture.lecture_id) }}
+            >
+              Open →
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Recent lectures */}
+      <div className="dashboard-library">
+        <div className="dashboard-section-hdr">
+            <span className="dashboard-section-label">Recent lectures</span>
           {recentLectures.length > 0 && (
-            <button className="btn-secondary btn-small" onClick={() => navigate('library')}>View all</button>
+            <button className="dashboard-view-all" onClick={() => navigate('library')}>
+              View all <span>→</span>
+            </button>
           )}
         </div>
 
-        {loading && <SkeletonBlock label="Loading lectures…" />}
-
-        {!loading && recentLectures.length === 0 && !error && (
-          <EmptyState
-            title="No lectures yet"
-            description="Upload your first lecture and LectureMind will turn it into searchable knowledge."
-            actionLabel="Upload Lecture"
-            onAction={() => navigate('upload')}
-          />
+        {loading && (
+          <div className="dashboard-loading">
+            <SkeletonBlock />
+            <SkeletonBlock />
+          </div>
         )}
 
-        {!loading && recentLectures.length > 0 && (
-          <div className="lecture-row-list">
-            {recentLectures.map((l) => (
-              <LectureRow key={l.lecture_id} lecture={l} onOpen={(id) => navigate('lecture', id)} />
+        {!loading && error && (
+          <div className="dashboard-error">
+            <p className="hint">{error}</p>
+          </div>
+        )}
+
+        {!loading && !error && recentLectures.length === 0 && (
+          <div className="dashboard-empty">
+            <EmptyState
+              title="No lectures yet"
+              description="Upload your first lecture to start building your personal knowledge library."
+              actionLabel="Add lecture"
+              onAction={() => navigate('upload')}
+            />
+          </div>
+        )}
+
+        {!loading && !error && recentLectures.length > 0 && (
+          <div className="dashboard-lecture-list">
+            {recentLectures.map((lecture, idx) => (
+              <button
+                key={lecture.lecture_id}
+                className="dashboard-lecture-row"
+                onClick={() => navigate('lecture', lecture.lecture_id)}
+              >
+                <div className="dashboard-lecture-index">
+                  {String(idx + 1).padStart(2, '0')}
+                </div>
+                <div className="dashboard-lecture-info">
+                  <span className="dashboard-lecture-title">
+                    {lecture.original_filename}
+                  </span>
+                  <span className="dashboard-lecture-meta">
+                    {FILE_TYPE_LABEL[lecture.file_type] || lecture.file_type}
+                    <span>·</span>
+                    {formatDuration(lecture.duration_seconds)}
+                    <span>·</span>
+                    {(lecture.question_count || 0)} {(lecture.question_count || 0) === 1 ? 'question' : 'questions'}
+                  </span>
+                </div>
+                <div className="dashboard-lecture-end">
+                  <span className="dashboard-lecture-date">{formatDate(lecture.upload_time)}</span>
+                  <span className="dashboard-lecture-arrow">→</span>
+                </div>
+              </button>
             ))}
           </div>
         )}
-      </section>
+      </div>
+
     </div>
   )
 }

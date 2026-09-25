@@ -68,6 +68,19 @@ class ChatResponse(BaseModel):
     sources: List[SourceChunk]
     latency_ms: float
 
+class ChatHistoryItem(BaseModel):
+    id: int
+    lecture_id: str
+    question: str
+    answer: str
+    sources: List[SourceChunk] = []
+    latency_ms: float
+    created_at: str
+
+
+class ChatHistoryResponse(BaseModel):
+    lecture_id: str
+    items: List[ChatHistoryItem]
 
 class LectureListItem(BaseModel):
     lecture_id: str
@@ -77,10 +90,24 @@ class LectureListItem(BaseModel):
     upload_time: str
     duration_seconds: Optional[float] = None
     num_chunks: int = 0
+    question_count: int = 0
 
 
 class LectureListResponse(BaseModel):
     lectures: List[LectureListItem]
+
+
+class LectureSearchResult(BaseModel):
+    lecture_id: str
+    original_filename: str
+    match_type: str
+    text: str
+    start: Optional[float] = None
+    end: Optional[float] = None
+
+
+class LectureSearchResponse(BaseModel):
+    results: List[LectureSearchResult]
 
 
 class LectureDetailResponse(BaseModel):

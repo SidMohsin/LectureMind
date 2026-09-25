@@ -1,15 +1,16 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useApp } from '../context/AppContext'
-import { listLectures, deleteLecture } from '../services/api'
+import { listLectures, deleteLecture, searchLectures } from '../services/api'
 import LectureRow from '../components/LectureRow'
 import EmptyState from '../components/EmptyState'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { SkeletonBlock } from '../components/Skeleton'
 import { statusBucket } from '../services/format'
+import { formatTimeRange } from '../services/format'
 
 const FILTERS = [
   { key: 'all', label: 'All' },
-  { key: 'completed', label: 'Completed' },
+  { key: 'completed', label: 'Ready' },
   { key: 'processing', label: 'Processing' },
   { key: 'uploaded', label: 'Uploaded' },
   { key: 'failed', label: 'Failed' },
@@ -18,7 +19,7 @@ const FILTERS = [
 const SORTS = [
   { key: 'newest', label: 'Newest first' },
   { key: 'oldest', label: 'Oldest first' },
-  { key: 'name', label: 'Name (A–Z)' },
+  { key: 'name', label: 'A–Z' },
 ]
 
 export default function Library() {
@@ -29,6 +30,8 @@ export default function Library() {
   const [error, setError] = useState(null)
 
   const [query, setQuery] = useState('')
+  const [searchResults, setSearchResults] = useState([])
+  const [searching, setSearching] = useState(false)
   const [filter, setFilter] = useState('all')
   const [sort, setSort] = useState('newest')
 
@@ -51,12 +54,27 @@ export default function Library() {
   useEffect(() => { load() }, [load, refreshToken])
 
   useEffect(() => {
-    function handleExternalSearch(e) {
-      setQuery(e.detail)
-    }
+    function handleExternalSearch(e) { setQuery(e.detail) }
     window.addEventListener('lecturemind:search', handleExternalSearch)
     return () => window.removeEventListener('lecturemind:search', handleExternalSearch)
   }, [])
+
+  useEffect(() => {
+    const term = query.trim()
+    if (!term) { setSearchResults([]); setSearching(false); return }
+    const timer = setTimeout(async () => {
+      setSearching(true)
+      try {
+        const res = await searchLectures(term)
+        setSearchResults(res.results || [])
+      } catch {
+        setSearchResults([])
+      } finally {
+        setSearching(false)
+      }
+    }, 250)
+    return () => clearTimeout(timer)
+  }, [query])
 
   const filtered = useMemo(() => {
     if (!lectures) return []
@@ -94,15 +112,34 @@ export default function Library() {
   return (
     <div className="page-library">
       <div className="page-header-row">
-        <h1>My Lectures</h1>
-        <button className="btn-primary btn-inline" onClick={() => navigate('upload')}>Upload Lecture</button>
+        <h1>All lectures</h1>
+        <button className="btn-primary btn-inline" onClick={() => navigate('upload')}>
+          + Add lecture
+        </button>
       </div>
+
+      {query.trim() && !loading && (
+        <div className="library-search-results">
+          <p className="library-search-label">{searching ? 'Searching your lecture content...' : 'Content matches'}</p>
+          {!searching && searchResults.map((result, index) => (
+            <button className="library-search-result" key={`${result.lecture_id}-${result.match_type}-${index}`} onClick={() => {
+              if (result.start != null) sessionStorage.setItem(`lecturemind:seek:${result.lecture_id}`, String(result.start))
+              navigate('lecture', result.lecture_id)
+            }}>
+              <span className="search-result-title">{result.original_filename}</span>
+              <span className="search-result-meta">{result.match_type}{result.start != null ? ` · ${formatTimeRange(result.start, result.end)}` : ''}</span>
+              <span className="search-result-text">{result.text}</span>
+            </button>
+          ))}
+          {!searching && searchResults.length === 0 && <p className="hint" style={{ padding: 14 }}>No content matches found.</p>}
+        </div>
+      )}
 
       <div className="library-toolbar">
         <input
           type="search"
-          className="panel-search-input library-search"
-          placeholder="Search lectures by filename…"
+          className="library-search"
+          placeholder="Search by filename…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -117,47 +154,45 @@ export default function Library() {
             </button>
           ))}
         </div>
-        <select className="library-sort" value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Sort lectures">
+        <select className="library-sort" value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Sort">
           {SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
         </select>
       </div>
 
-      <div className="card">
-        {loading && <SkeletonBlock label="Loading lectures…" />}
+      {loading && <SkeletonBlock label="Loading lectures…" />}
 
-        {!loading && error && <p className="error-banner">{error}</p>}
+      {!loading && error && <p className="error-banner">{error}</p>}
 
-        {!loading && !error && filtered.length === 0 && (lectures || []).length === 0 && (
-          <EmptyState
-            title="No lectures yet"
-            description="Upload your first lecture and LectureMind will turn it into searchable knowledge."
-            actionLabel="Upload Lecture"
-            onAction={() => navigate('upload')}
-          />
-        )}
+      {!loading && !error && filtered.length === 0 && (lectures || []).length === 0 && (
+        <EmptyState
+          title="Your library is empty"
+          description="Upload a lecture recording and LectureMind will transcribe, summarize, and make it searchable."
+          actionLabel="Add your first lecture"
+          onAction={() => navigate('upload')}
+        />
+      )}
 
-        {!loading && !error && filtered.length === 0 && (lectures || []).length > 0 && (
-          <p className="hint">No lectures match your search/filter.</p>
-        )}
+      {!loading && !error && filtered.length === 0 && (lectures || []).length > 0 && (
+        <p className="hint" style={{ padding: '24px 0' }}>No lectures match your search or filter.</p>
+      )}
 
-        {!loading && !error && filtered.length > 0 && (
-          <div className="lecture-row-list">
-            {filtered.map((l) => (
-              <LectureRow
-                key={l.lecture_id}
-                lecture={l}
-                onOpen={(id) => navigate('lecture', id)}
-                onDelete={(lecture) => setPendingDelete(lecture)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+      {!loading && !error && filtered.length > 0 && (
+        <div className="lecture-row-list">
+          {filtered.map((l) => (
+            <LectureRow
+              key={l.lecture_id}
+              lecture={l}
+              onOpen={(id) => navigate('lecture', id)}
+              onDelete={(lec) => setPendingDelete(lec)}
+            />
+          ))}
+        </div>
+      )}
 
       <ConfirmDialog
         open={!!pendingDelete}
         title="Delete this lecture?"
-        message={pendingDelete ? `"${pendingDelete.original_filename}" and all of its transcript, summary, keywords, and indexed data will be permanently deleted. This cannot be undone.` : ''}
+        message={pendingDelete ? `"${pendingDelete.original_filename}" and all of its transcript, summary, keywords, and indexed data will be permanently deleted.` : ''}
         confirmLabel={deleting ? 'Deleting…' : 'Delete'}
         danger
         onConfirm={confirmDelete}

@@ -27,22 +27,28 @@ export default function UploadPage() {
 
   return (
     <div className="page-upload">
-      <div className="page-header-row">
-        <h1>Upload Lecture</h1>
+      <div className="upload-hero">
+        <span className="upload-kicker">New lecture</span>
+        <h1>Bring your next lecture<br />into focus.</h1>
+        <p>Upload a recording and get a timestamped transcript, clear notes, key concepts, and a grounded study chat.</p>
       </div>
-      <p className="page-subtitle">
-        Upload a lecture recording and LectureMind will automatically extract the audio,
-        transcribe it with timestamps, generate a summary, extract keywords, and make it
-        ready for question answering.
-      </p>
 
-      <div className="card upload-page-card">
+      <div className="upload-layout">
         <UploadZone
           onUpload={handleUpload}
           uploading={uploading}
           uploadProgress={uploadProgress}
           error={error}
         />
+        <aside className="upload-notes">
+          <span>What happens next</span>
+          <ol>
+            <li><b>01</b> We prepare your recording.</li>
+            <li><b>02</b> A searchable transcript is created.</li>
+            <li><b>03</b> Notes and key concepts are ready to study.</li>
+          </ol>
+          <p>Your files stay in your private library.</p>
+        </aside>
       </div>
     </div>
   )
