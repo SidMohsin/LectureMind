@@ -1,0 +1,28 @@
+.footer {
+  border-top: 1px solid var(--color-border);
+  margin-top: var(--space-16);
+}
+
+.footer__inner {
+  max-width: var(--page-max-width);
+  margin: 0 auto;
+  padding: var(--space-6) var(--page-padding-x);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  color: var(--color-text-tertiary);
+  font-size: var(--fs-body-sm);
+}
+
+.footer__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+}
+
+.footer__tagline {
+  color: var(--color-text-tertiary);
+}

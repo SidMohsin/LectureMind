@@ -1,0 +1,11 @@
+.page-container {
+  max-width: var(--page-max-width);
+  margin: 0 auto;
+  padding: var(--space-8) var(--page-padding-x);
+}
+
+@media (max-width: 768px) {
+  .page-container {
+    padding: var(--space-5) var(--space-4);
+  }
+}
