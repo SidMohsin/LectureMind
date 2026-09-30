@@ -11,6 +11,25 @@
   text-transform: uppercase;
 }
 
+.status-badge,
+.source-badge {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.status-badge {
+  font-family: var(--font-sans);
+  font-size: var(--fs-meta);
+  padding: 3px var(--space-3);
+}
+
+.status-badge__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
 .badge--neutral {
   background: var(--color-surface-sunken);
   color: var(--color-text-secondary);

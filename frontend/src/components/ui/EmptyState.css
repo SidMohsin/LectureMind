@@ -10,6 +10,11 @@
   background: var(--color-surface);
 }
 
+.empty-state--error {
+  border-style: solid;
+  border-color: #f5cccc;
+}
+
 .empty-state__title {
   font-size: var(--fs-section-heading);
 }

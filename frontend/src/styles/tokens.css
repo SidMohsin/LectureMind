@@ -7,7 +7,7 @@
 
 :root {
   /* Typography */
-  --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-sans: "Inter Variable", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
   --font-mono: "IBM Plex Mono", "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
 
   --fs-display: 2.5rem;
@@ -44,6 +44,7 @@
   --color-accent-hover: #16225c;
   --color-accent-soft: #eef0fb;
   --color-accent-text: #1e2f7a;
+  --color-progress: #1f5ad6;
 
   /* Semantic colors */
   --color-success: #1a8a4a;

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
-import { NavLink, Link } from "react-router-dom";
+import { NavLink, Link, useLocation } from "react-router-dom";
 import Button from "../ui/Button";
+import { CloseIcon, MenuIcon } from "../ui/icons";
 import { useAuth } from "../../auth/AuthContext";
 import { displayNameFor, initialsFor } from "../../auth/identity";
 import "./Navbar.css";
@@ -16,7 +17,12 @@ export default function Navbar() {
   const { user, profile, signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const location = useLocation();
   const menuRef = useRef(null);
+
+  // Close the mobile panel after navigating.
+  useEffect(() => setMobileOpen(false), [location.pathname]);
   const triggerRef = useRef(null);
 
   const name = displayNameFor(user, profile);
@@ -66,6 +72,17 @@ export default function Navbar() {
             </NavLink>
           ))}
         </nav>
+
+        <button
+          type="button"
+          className="navbar__icon-btn navbar__mobile-toggle"
+          aria-label={mobileOpen ? "Close navigation" : "Open navigation"}
+          aria-expanded={mobileOpen}
+          aria-controls="mobile-nav"
+          onClick={() => setMobileOpen((open) => !open)}
+        >
+          {mobileOpen ? <CloseIcon size={20} /> : <MenuIcon size={20} />}
+        </button>
 
         <div className="navbar__actions">
           <Button as={Link} to="/lectures/new" variant="primary" className="navbar__upload">
@@ -125,6 +142,23 @@ export default function Navbar() {
           </div>
         </div>
       </div>
+
+      {mobileOpen && (
+        <nav id="mobile-nav" className="navbar__mobile" aria-label="Primary">
+          {NAV_LINKS.map((link) => (
+            <NavLink
+              key={link.to}
+              to={link.to}
+              className={({ isActive }) => `navbar__mobile-link ${isActive ? "navbar__mobile-link--active" : ""}`}
+            >
+              {link.label}
+            </NavLink>
+          ))}
+          <Button as={Link} to="/lectures/new" className="navbar__mobile-upload">
+            Upload Lecture
+          </Button>
+        </nav>
+      )}
     </header>
   );
 }

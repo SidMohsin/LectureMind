@@ -56,9 +56,10 @@ export default function AuthProvider({ children }) {
     return () => controller.abort();
   }, [userId]);
 
-  const signOut = useCallback(async () => {
+  // scope "global" also revokes the user's sessions on every other device.
+  const signOut = useCallback(async ({ scope } = {}) => {
     signingOut.current = true;
-    const { error } = await supabase.auth.signOut();
+    const { error } = await supabase.auth.signOut(scope ? { scope } : undefined);
     // If the server couldn't be reached, still end the session on this device.
     if (error) await supabase.auth.signOut({ scope: "local" });
   }, []);
