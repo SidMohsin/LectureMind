@@ -34,6 +34,11 @@
   color: var(--color-text-disabled);
 }
 
+.input-field__hint {
+  font-size: var(--fs-caption);
+  color: var(--color-text-tertiary);
+}
+
 .input-field__error {
   font-size: var(--fs-caption);
   color: var(--color-error);

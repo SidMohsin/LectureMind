@@ -5,6 +5,8 @@ __pycache__/
 .env
 .env.*
 !.env.example
+!.env.test.example
+.pytest_cache/
 dist/
 build/
 *.pyc

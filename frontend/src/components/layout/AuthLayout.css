@@ -52,3 +52,38 @@
   font-size: var(--fs-body-sm);
   margin-bottom: var(--space-6);
 }
+
+.auth-layout__footer {
+  margin-top: calc(-1 * var(--space-4));
+  font-size: var(--fs-body-sm);
+  color: var(--color-text-secondary);
+}
+
+.auth-form__submit {
+  width: 100%;
+  margin-top: var(--space-2);
+}
+
+.auth-form__row {
+  display: flex;
+  justify-content: flex-end;
+  margin: calc(-1 * var(--space-2)) 0 var(--space-4);
+  font-size: var(--fs-body-sm);
+}
+
+.auth-form__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.auth-form__actions .btn {
+  width: 100%;
+}
+
+.auth-note {
+  margin-top: var(--space-5);
+  font-size: var(--fs-body-sm);
+  color: var(--color-text-secondary);
+  text-align: center;
+}

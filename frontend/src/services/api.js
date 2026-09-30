@@ -1,9 +1,15 @@
 /**
  * Central API client. All backend requests should go through this module
  * instead of scattering fetch() calls across components/pages.
+ *
+ * Requests are authenticated by default with the current Supabase access
+ * token. Pass { auth: false } for public endpoints.
  */
+import { supabase } from "../lib/supabase";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+
+const SESSION_EXPIRED_MESSAGE = "Your session has expired. Please log in again.";
 
 class ApiError extends Error {
   constructor(message, { status, data } = {}) {
@@ -14,38 +20,64 @@ class ApiError extends Error {
   }
 }
 
-async function request(path, { method = "GET", body, headers, isFormData = false, signal } = {}) {
-  const url = `${API_BASE_URL}${path}`;
+async function accessToken({ refresh = false } = {}) {
+  const { data } = refresh ? await supabase.auth.refreshSession() : await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
+}
 
+async function send(url, { method, body, headers, isFormData, signal, token }) {
   const finalHeaders = { ...headers };
-  if (!isFormData && body !== undefined) {
-    finalHeaders["Content-Type"] = "application/json";
-  }
+  if (!isFormData && body !== undefined) finalHeaders["Content-Type"] = "application/json";
+  if (token) finalHeaders.Authorization = `Bearer ${token}`;
 
-  let response;
   try {
-    response = await fetch(url, {
+    return await fetch(url, {
       method,
       headers: finalHeaders,
       body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
       signal,
     });
   } catch (networkError) {
+    if (networkError.name === "AbortError") throw networkError;
     throw new ApiError("Unable to reach the server. Check your connection and try again.", {
       status: 0,
       data: { cause: networkError.message },
     });
   }
+}
 
+async function parse(response) {
   const contentType = response.headers.get("content-type") || "";
-  const payload = contentType.includes("application/json")
+  return contentType.includes("application/json")
     ? await response.json().catch(() => null)
     : await response.text().catch(() => null);
+}
+
+async function request(path, { method = "GET", body, headers, isFormData = false, signal, auth = true } = {}) {
+  const url = `${API_BASE_URL}${path}`;
+  const options = { method, body, headers, isFormData, signal };
+
+  let response = await send(url, { ...options, token: auth ? await accessToken() : null });
+
+  if (auth && response.status === 401) {
+    // The stored token may have expired between refreshes; try once more with a fresh one.
+    const refreshed = await accessToken({ refresh: true });
+    if (refreshed) response = await send(url, { ...options, token: refreshed });
+
+    if (response.status === 401) {
+      // Clearing the local session lets the auth layer route the user back to login.
+      await supabase.auth.signOut({ scope: "local" });
+      throw new ApiError(SESSION_EXPIRED_MESSAGE, { status: 401, data: await parse(response) });
+    }
+  }
+
+  const payload = await parse(response);
 
   if (!response.ok) {
     const message =
-      (payload && typeof payload === "object" && (payload.message || payload.detail)) ||
-      `Request failed with status ${response.status}`;
+      response.status === 403
+        ? "You don't have permission to do that."
+        : (payload && typeof payload === "object" && payload.message) || `Request failed with status ${response.status}`;
     throw new ApiError(message, { status: response.status, data: payload });
   }
 

@@ -5,7 +5,7 @@ import "./AuthLayout.css";
  * Focused, distraction-free layout shared by authentication screens
  * (login, sign up, verification, password reset).
  */
-export default function AuthLayout({ title, description, children }) {
+export default function AuthLayout({ title, description, children, footer }) {
   return (
     <div className="auth-layout">
       <Link to="/" className="auth-layout__brand">
@@ -17,6 +17,7 @@ export default function AuthLayout({ title, description, children }) {
         {description && <p className="auth-layout__description">{description}</p>}
         <div className="auth-layout__body">{children}</div>
       </div>
+      {footer && <p className="auth-layout__footer">{footer}</p>}
     </div>
   );
 }

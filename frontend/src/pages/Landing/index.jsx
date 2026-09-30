@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
 import Footer from "../../components/layout/Footer";
+import { useAuth } from "../../auth/AuthContext";
 import "./Landing.css";
 
 const WORKFLOW_STEPS = ["Lecture", "Transcription", "Structure", "Search / Retrieval", "Grounded Answers"];
@@ -37,6 +38,8 @@ const USE_CASES = [
 ];
 
 export default function Landing() {
+  const { status } = useAuth();
+
   return (
     <div>
       <header className="landing-header">
@@ -46,12 +49,20 @@ export default function Landing() {
             <span>LectureMind</span>
           </Link>
           <div className="landing-header__actions">
-            <Button as={Link} to="/login" variant="secondary">
-              Log In
-            </Button>
-            <Button as={Link} to="/signup" variant="primary">
-              Get Started
-            </Button>
+            {status === "authenticated" ? (
+              <Button as={Link} to="/dashboard" variant="primary">
+                Go to Dashboard
+              </Button>
+            ) : (
+              <>
+                <Button as={Link} to="/login" variant="secondary">
+                  Log In
+                </Button>
+                <Button as={Link} to="/signup" variant="primary">
+                  Get Started
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </header>

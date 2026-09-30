@@ -14,6 +14,10 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 logger = logging.getLogger(__name__)
 
 
+class UpstreamServiceError(Exception):
+    """A dependency (e.g. Supabase) failed or returned an unexpected error."""
+
+
 def error_body(message: str, *, code: str | None = None, details: object | None = None) -> dict:
     return {
         "message": message,
@@ -28,6 +32,14 @@ def register_error_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=exc.status_code,
             content=error_body(str(exc.detail), code="http_error"),
+            headers=getattr(exc, "headers", None),
+        )
+
+    @app.exception_handler(UpstreamServiceError)
+    async def upstream_exception_handler(request: Request, exc: UpstreamServiceError):
+        return JSONResponse(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            content=error_body("A required service is temporarily unavailable. Please try again.", code="upstream_error"),
         )
 
     @app.exception_handler(RequestValidationError)
