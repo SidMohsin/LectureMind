@@ -11,13 +11,16 @@ import { AlertIcon, ArrowRightIcon, PlusIcon, RefreshIcon, SearchIcon } from "..
 import { SourceBadge, StatusBadge } from "../../components/lectures/LectureBadges";
 import LectureMenu from "../../components/lectures/LectureMenu";
 import DeleteLectureDialog from "../../components/lectures/DeleteLectureDialog";
+import RetryButton from "../../components/lectures/RetryButton";
 import { useAsyncData } from "../../hooks/useAsyncData";
 import { listLectures, listSubjects } from "../../services/lectures";
-import { lecturePath, statusInfo } from "../../lectures/lectureStatus";
+import { isActive, lecturePath, statusInfo } from "../../lectures/lectureStatus";
 import { formatDate, formatDuration } from "../../utils/format";
 import "./Dashboard.css";
 
 const RECENT_LIMIT = 5;
+// Refresh quietly while something on the page is still queued or processing.
+const POLL = { intervalMs: 4000, while: (data) => data?.items.some(isActive) };
 const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
 export default function Dashboard() {
@@ -28,8 +31,10 @@ export default function Dashboard() {
   const [subject, setSubject] = useState("");
   const [pendingDelete, setPendingDelete] = useState(null);
 
-  const recent = useAsyncData((options) => listLectures({ subject, limit: RECENT_LIMIT }, options), [subject]);
-  const processing = useAsyncData((options) => listLectures({ status: "processing", limit: 3 }, options), []);
+  const recent = useAsyncData((options) => listLectures({ subject, limit: RECENT_LIMIT }, options), [subject], { poll: POLL });
+  const processing = useAsyncData((options) => listLectures({ status: "processing", limit: 3 }, options), [], {
+    poll: POLL,
+  });
   const failed = useAsyncData((options) => listLectures({ status: "failed", limit: 3 }, options), []);
   const subjects = useAsyncData((options) => listSubjects(options), []);
 
@@ -127,11 +132,14 @@ export default function Dashboard() {
                   <Link to={lecturePath(lecture)} className="attention-item__title">
                     {lecture.title}
                   </Link>
-                  <p className="attention-item__detail">Processing couldn&apos;t be completed.</p>
+                  <p className="attention-item__detail">
+                    {lecture.job?.error_message || "Processing couldn't be completed."}
+                  </p>
                 </div>
                 <Button as={Link} to={lecturePath(lecture)} variant="secondary">
                   View Processing Details
                 </Button>
+                {lecture.job?.retryable && <RetryButton lecture={lecture} onRetried={reloadAll} />}
               </li>
             ))}
           </ul>
@@ -198,14 +206,24 @@ export default function Dashboard() {
 }
 
 function ProcessingCard({ lecture }) {
-  const info = statusInfo(lecture.status);
+  const info = statusInfo(lecture.status, lecture.job);
+  const eyebrow = info.waiting
+    ? "Waiting"
+    : info.badge === "Retrying"
+      ? "Retrying"
+      : isActive(lecture) && lecture.job?.status === "running"
+        ? "Active processing"
+        : "Queued for processing";
   return (
-    <section className="processing-card" aria-label={`Processing ${lecture.title}`}>
+    <section
+      className={`processing-card ${info.waiting ? "processing-card--waiting" : ""}`}
+      aria-label={`Processing ${lecture.title}`}
+    >
       <div className="processing-card__head">
         <span className="processing-card__icon" aria-hidden="true">
           <RefreshIcon size={18} />
         </span>
-        <span className="processing-card__eyebrow mono">{info.stage ? "Active processing" : "Awaiting processing"}</span>
+        <span className="processing-card__eyebrow mono">{eyebrow}</span>
         <h2 className="processing-card__title">{lecture.title}</h2>
         <Button as={Link} to={lecturePath(lecture)} variant="secondary" className="processing-card__action">
           View Processing Details <ArrowRightIcon size={15} />
@@ -274,7 +292,7 @@ function RecentTable({ data, refreshing, onDelete }) {
                 </td>
                 <td data-label="Date added">{formatDate(lecture.created_at)}</td>
                 <td data-label="Status">
-                  <StatusBadge status={lecture.status} />
+                  <StatusBadge status={lecture.status} job={lecture.job} />
                 </td>
                 <td className="recent-table__actions">
                   <Button as={Link} to={lecturePath(lecture)} variant="secondary" className="recent-table__open">

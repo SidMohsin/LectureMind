@@ -5,8 +5,11 @@ Nothing here should be hard-coded per environment; environment separation is
 achieved by pointing each deployment at its own .env / process environment.
 """
 
+import tempfile
 from functools import lru_cache
+from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -30,15 +33,42 @@ class Settings(BaseSettings):
     # HS256 secret. Projects using asymmetric JWT signing keys verify via JWKS.
     supabase_jwt_secret: str = ""
 
-    # Direct database connection (reserved for workers in later phases; unused so far)
+    # Server-only secret. Used for ingestion writes (lecture/job/media records,
+    # storage uploads) after the API has verified ownership, and by the worker.
+    # Never exposed to the frontend.
+    supabase_service_role_key: str = ""
+
+    # Direct database connection (reserved; unused so far)
     database_url: str = ""
 
-    # Redis / queue (reserved for Phase 4 processing; unused so far)
-    redis_url: str = ""
+    # Processing queue + worker
+    redis_url: str = "redis://localhost:6379/0"
+    queue_name: str = "lecturemind:processing"
+    worker_lease_seconds: int = 120
+    worker_heartbeat_seconds: int = 30
+    worker_recovery_interval_seconds: int = 15
+    worker_retry_backoff_seconds: int = 30
+    # Per-job scratch space for downloads and FFmpeg output (never permanent storage).
+    work_dir: str = ""
+    ffmpeg_path: str = "ffmpeg"
+    ffprobe_path: str = "ffprobe"
+    ffmpeg_timeout_seconds: int = 1800
+
+    # Ingestion limits (authoritative; the frontend reads them from the API)
+    max_video_bytes: int = 2 * 1024**3
+    max_audio_bytes: int = 500 * 1024**2
+    max_media_duration_seconds: int = 4 * 3600
+    source_url_downloads_enabled: bool = True
 
     # LLM provider (reserved for Phase 6 RAG; unused so far)
     llm_provider: str = ""
     llm_api_key: str = ""
+
+    @field_validator("redis_url", mode="after")
+    @classmethod
+    def _redis_default(cls, value: str) -> str:
+        # An empty REDIS_URL= line (older .env templates) means "use the local default".
+        return value or "redis://localhost:6379/0"
 
     @property
     def cors_origins_list(self) -> list[str]:
@@ -59,6 +89,18 @@ class Settings(BaseSettings):
     @property
     def supabase_rest_url(self) -> str:
         return f"{self.supabase_url.rstrip('/')}/rest/v1"
+
+    @property
+    def supabase_storage_url(self) -> str:
+        return f"{self.supabase_url.rstrip('/')}/storage/v1"
+
+    @property
+    def ingestion_configured(self) -> bool:
+        return self.supabase_configured and bool(self.supabase_service_role_key)
+
+    @property
+    def work_path(self) -> Path:
+        return Path(self.work_dir) if self.work_dir else Path(tempfile.gettempdir()) / "lecturemind-work"
 
 
 @lru_cache

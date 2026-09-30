@@ -154,6 +154,14 @@
   background: var(--color-progress);
 }
 
+.lecture-item__progress--waiting .lecture-item__progress-label {
+  color: var(--color-text-secondary);
+}
+
+.lecture-item__progress--waiting .lecture-item__progress-bar span {
+  background: var(--color-border-strong);
+}
+
 .lecture-item__failure {
   display: flex;
   align-items: center;

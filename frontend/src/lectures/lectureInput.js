@@ -26,13 +26,17 @@ export const INPUT_KINDS = {
   },
 };
 
-export function validateMediaFile(file, kind) {
+/**
+ * A quick first check in the browser. The server re-validates the actual file
+ * bytes and is authoritative; `maxBytes` should come from the server's limits.
+ */
+export function validateMediaFile(file, kind, maxBytes = INPUT_KINDS[kind].maxBytes) {
   const rules = INPUT_KINDS[kind];
   const name = file.name.toLowerCase();
   const typeOk = rules.mimeTypes.includes(file.type) || rules.extensions.some((ext) => name.endsWith(ext));
   if (!typeOk) return `This file type isn't supported. Choose a ${rules.formats} file.`;
   if (file.size === 0) return "This file is empty.";
-  if (file.size > rules.maxBytes) return `This file is larger than the ${formatFileSize(rules.maxBytes)} limit.`;
+  if (file.size > maxBytes) return `This file is larger than the ${formatFileSize(maxBytes)} limit.`;
   return null;
 }
 

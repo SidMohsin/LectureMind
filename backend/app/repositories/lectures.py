@@ -7,7 +7,8 @@ MEDIA_BUCKET = "lectures"
 
 LECTURE_COLUMNS = (
     "id,title,subject,topic,instructor,lecture_date,tags,source_type,source_url,"
-    "status,duration_seconds,created_at,updated_at"
+    "status,duration_seconds,original_filename,created_at,updated_at,"
+    "job:processing_jobs(status,current_stage,error_code,error_message,retryable,status_detail,attempt_count,updated_at)"
 )
 
 StatusGroup = Literal["ready", "processing", "failed"]

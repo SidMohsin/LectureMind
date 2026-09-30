@@ -3,6 +3,7 @@ import Button from "../ui/Button";
 import { AlertIcon, ArrowRightIcon } from "../ui/icons";
 import { SourceBadge, SourceIcon, StatusBadge } from "./LectureBadges";
 import LectureMenu from "./LectureMenu";
+import RetryButton from "./RetryButton";
 import { lecturePath, statusInfo } from "../../lectures/lectureStatus";
 import { formatDate, formatDuration } from "../../utils/format";
 import "./LectureItem.css";
@@ -35,17 +36,17 @@ function Metadata({ lecture }) {
 }
 
 function StatusDetail({ lecture }) {
-  const info = statusInfo(lecture.status);
+  const info = statusInfo(lecture.status, lecture.job);
   if (info.group === "failed") {
     return (
       <p className="lecture-item__failure">
-        <AlertIcon size={14} /> Processing couldn&apos;t be completed for this lecture.
+        <AlertIcon size={14} /> {info.message || "Processing couldn't be completed for this lecture."}
       </p>
     );
   }
   if (info.group !== "processing") return null;
   return (
-    <div className="lecture-item__progress">
+    <div className={`lecture-item__progress ${info.waiting ? "lecture-item__progress--waiting" : ""}`}>
       <span className="lecture-item__progress-label mono">
         {info.label}
         {info.stage && ` (Stage ${info.stage}/${info.totalStages})`}
@@ -76,8 +77,9 @@ function PrimaryAction({ lecture }) {
   );
 }
 
-export default function LectureItem({ lecture, layout = "list", onDelete }) {
-  const group = statusInfo(lecture.status).group;
+export default function LectureItem({ lecture, layout = "list", onDelete, onRetried }) {
+  const info = statusInfo(lecture.status, lecture.job);
+  const group = info.group;
   return (
     <article className={`lecture-item lecture-item--${layout} lecture-item--${group}`}>
       <MediaTile lecture={lecture} />
@@ -96,9 +98,9 @@ export default function LectureItem({ lecture, layout = "list", onDelete }) {
         <StatusDetail lecture={lecture} />
       </div>
       <div className="lecture-item__side">
-        <StatusBadge status={lecture.status} />
+        <StatusBadge status={lecture.status} job={lecture.job} />
         <div className="lecture-item__actions">
-          <PrimaryAction lecture={lecture} />
+          {info.retryable ? <RetryButton lecture={lecture} onRetried={onRetried} /> : <PrimaryAction lecture={lecture} />}
           <LectureMenu lecture={lecture} onDelete={onDelete} />
         </div>
       </div>

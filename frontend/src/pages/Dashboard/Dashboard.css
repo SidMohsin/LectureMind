@@ -351,3 +351,16 @@
     width: 100%;
   }
 }
+
+.processing-card--waiting .processing-card__eyebrow,
+.processing-card--waiting .processing-card__stage {
+  color: var(--color-text-secondary);
+}
+
+.processing-card--waiting .processing-card__icon {
+  color: var(--color-text-secondary);
+}
+
+.processing-card--waiting .processing-card__bar span {
+  background: var(--color-border-strong);
+}

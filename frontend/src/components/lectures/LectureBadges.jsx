@@ -4,12 +4,13 @@ import { SOURCE_TYPE_LABELS, statusInfo } from "../../lectures/lectureStatus";
 
 const SOURCE_ICONS = { video: VideoIcon, audio: AudioIcon, url: LinkIcon };
 
-export function StatusBadge({ status }) {
-  const info = statusInfo(status);
+export function StatusBadge({ status, job }) {
+  const info = statusInfo(status, job);
+  const text = info.badge ?? (info.group === "processing" ? "Processing" : info.label);
   return (
     <Badge tone={info.tone} className="status-badge">
       <span className="status-badge__dot" aria-hidden="true" />
-      {info.group === "processing" ? "Processing" : info.label}
+      {text}
     </Badge>
   );
 }

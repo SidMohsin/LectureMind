@@ -18,6 +18,17 @@ class UpstreamServiceError(Exception):
     """A dependency (e.g. Supabase) failed or returned an unexpected error."""
 
 
+class AppError(Exception):
+    """An expected, user-facing failure with a stable machine-readable code."""
+
+    def __init__(self, status_code: int, code: str, message: str, details: object | None = None):
+        super().__init__(message)
+        self.status_code = status_code
+        self.code = code
+        self.message = message
+        self.details = details
+
+
 def error_body(message: str, *, code: str | None = None, details: object | None = None) -> dict:
     return {
         "message": message,
@@ -34,6 +45,10 @@ def register_error_handlers(app: FastAPI) -> None:
             content=error_body(str(exc.detail), code="http_error"),
             headers=getattr(exc, "headers", None),
         )
+
+    @app.exception_handler(AppError)
+    async def app_error_handler(request: Request, exc: AppError):
+        return JSONResponse(status_code=exc.status_code, content=error_body(exc.message, code=exc.code, details=exc.details))
 
     @app.exception_handler(UpstreamServiceError)
     async def upstream_exception_handler(request: Request, exc: UpstreamServiceError):

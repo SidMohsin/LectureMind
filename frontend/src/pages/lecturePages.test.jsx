@@ -11,10 +11,20 @@ const lectures = vi.hoisted(() => ({
 }));
 vi.mock("../services/lectures", () => lectures);
 
+const ingestion = vi.hoisted(() => ({
+  getIngestionLimits: vi.fn(),
+  uploadLecture: vi.fn(),
+  submitSourceUrl: vi.fn(),
+  retryProcessing: vi.fn(),
+  getProcessingDetails: vi.fn(),
+}));
+vi.mock("../services/ingestion", () => ingestion);
+
 const { default: Library } = await import("./Library");
 const { default: Dashboard } = await import("./Dashboard");
 const { default: Upload } = await import("./Upload");
 const { default: Workspace } = await import("./Workspace");
+const { default: Processing } = await import("./Processing");
 
 const lecture = (overrides = {}) => ({
   id: crypto.randomUUID(),
@@ -49,6 +59,7 @@ function renderAt(path) {
           <Route path="/library" element={<Library />} />
           <Route path="/lectures/new" element={<Upload />} />
           <Route path="/lectures/:id" element={<Workspace />} />
+          <Route path="/lectures/:id/processing" element={<Processing />} />
           <Route path="*" element={null} />
         </Routes>
         <LocationProbe />
@@ -59,6 +70,14 @@ function renderAt(path) {
 
 beforeEach(() => {
   Object.values(lectures).forEach((fn) => fn.mockReset());
+  Object.values(ingestion).forEach((fn) => fn.mockReset());
+  ingestion.getIngestionLimits.mockResolvedValue({
+    video: { max_bytes: 2 * 1024 ** 3, formats: [] },
+    audio: { max_bytes: 500 * 1024 ** 2, formats: [] },
+    max_duration_seconds: 14400,
+    source_urls_enabled: true,
+    source_providers: ["youtube"],
+  });
   lectures.listSubjects.mockResolvedValue({ subjects: ["Computer Science", "Physics"] });
   localStorage.clear();
 });
@@ -209,6 +228,18 @@ describe("Dashboard", () => {
 describe("Ingest Lecture", () => {
   const chooseFile = (file) =>
     act(() => fireEvent.change(screen.getByLabelText(/Choose a (video|audio) file/), { target: { files: [file] } }));
+  const accepted = (overrides = {}) => ({
+    lecture: { id: "lec-1", title: "cs229 lecture04", status: "QUEUED", source_type: "video", source_url: null },
+    job: { id: "job-1", status: "queued", current_stage: "EXTRACTING_AUDIO" },
+    replayed: false,
+    ...overrides,
+  });
+
+  async function fillValidVideo() {
+    await chooseFile(new File(["x"], "cs229_lecture04.mp4", { type: "video/mp4" }));
+    fireEvent.change(screen.getByLabelText(/Subject \/ Discipline/), { target: { value: "Computer Science" } });
+    fireEvent.change(screen.getByLabelText(/Tags/), { target: { value: "ML, Optimization, ml" } });
+  }
 
   it("rejects unsupported files and accepts valid ones", async () => {
     renderAt("/lectures/new");
@@ -220,27 +251,286 @@ describe("Ingest Lecture", () => {
     expect(screen.getByLabelText(/Lecture Title/).value).toBe("cs229 lecture04");
   });
 
-  it("validates required details and the source URL", async () => {
+  it("uses the server's size limits", async () => {
+    ingestion.getIngestionLimits.mockResolvedValue({
+      video: { max_bytes: 1000, formats: [] },
+      audio: { max_bytes: 1000, formats: [] },
+      max_duration_seconds: 60,
+      source_urls_enabled: true,
+      source_providers: ["youtube"],
+    });
+    renderAt("/lectures/new");
+    await waitFor(() => expect(screen.getByText(/up to 1 KB/)).toBeTruthy());
+    await chooseFile(new File([new Uint8Array(2000)], "big.mp4", { type: "video/mp4" }));
+    expect(screen.getByText(/larger than the 1 KB limit/)).toBeTruthy();
+  });
+
+  it("validates required details, the URL and rights confirmation", async () => {
     renderAt("/lectures/new");
     fireEvent.click(screen.getByRole("tab", { name: /YouTube/ }));
     fireEvent.change(screen.getByLabelText("Video URL"), { target: { value: "https://vimeo.com/1" } });
     fireEvent.click(screen.getByRole("button", { name: /Start Ingestion/ }));
 
     expect(screen.getByText("Only YouTube links are supported right now.")).toBeTruthy();
-    expect(screen.getByText("Enter a lecture title.")).toBeTruthy();
     expect(screen.getByText("Enter the subject or discipline.")).toBeTruthy();
+    expect(screen.getByText("Confirm that you have the right to use this video.")).toBeTruthy();
+    expect(screen.queryByText("Enter a lecture title.")).toBeNull(); // the video's own title is used
+    expect(ingestion.submitSourceUrl).not.toHaveBeenCalled();
   });
 
-  it("never pretends ingestion happened", async () => {
+  it("uploads the file with its details and shows real progress, then the result", async () => {
+    let resolveUpload;
+    ingestion.uploadLecture.mockImplementation(({ onProgress }) => {
+      onProgress({ loaded: 512 * 1024, total: 1024 * 1024 });
+      return new Promise((resolve) => (resolveUpload = resolve));
+    });
     renderAt("/lectures/new");
-    await chooseFile(new File(["x"], "lecture.mp4", { type: "video/mp4" }));
-    fireEvent.change(screen.getByLabelText(/Subject \/ Discipline/), { target: { value: "Computer Science" } });
+    await fillValidVideo();
     fireEvent.click(screen.getByRole("button", { name: /Start Ingestion/ }));
 
-    expect(screen.getByText(/nothing has been uploaded or saved/)).toBeTruthy();
-    expect(lectures.listLectures).not.toHaveBeenCalled();
-    expect(lectures.deleteLecture).not.toHaveBeenCalled();
-    expect(screen.getByTestId("location").textContent).toBe("/lectures/new");
+    expect(await screen.findByText("512 KB of 1.0 MB (50%)")).toBeTruthy();
+    const call = ingestion.uploadLecture.mock.calls[0][0];
+    expect(call.kind).toBe("video");
+    expect(call.file.name).toBe("cs229_lecture04.mp4");
+    expect(call.details).toMatchObject({ title: "cs229 lecture04", subject: "Computer Science", tags: ["ML", "Optimization"] });
+    expect(call.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
+
+    await act(async () => resolveUpload(accepted()));
+    expect(await screen.findByText("Lecture added")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /View Processing Details/ }).getAttribute("href")).toBe(
+      "/lectures/lec-1/processing"
+    );
+  });
+
+  it("resubmitting the same input reuses its request key; changed input gets a new one", async () => {
+    ingestion.uploadLecture.mockRejectedValue(Object.assign(new Error("Unable to reach the server."), { status: 0 }));
+    renderAt("/lectures/new");
+    await fillValidVideo();
+    fireEvent.click(screen.getByRole("button", { name: /Start Ingestion/ }));
+    await screen.findByText("Unable to reach the server.");
+    fireEvent.click(screen.getByRole("button", { name: /Start Ingestion/ }));
+    await waitFor(() => expect(ingestion.uploadLecture).toHaveBeenCalledTimes(2));
+    const [first, second] = ingestion.uploadLecture.mock.calls.map(([args]) => args.idempotencyKey);
+    expect(second).toBe(first);
+
+    fireEvent.change(screen.getByLabelText(/Specific Topic/), { target: { value: "Duality" } });
+    fireEvent.click(screen.getByRole("button", { name: /Start Ingestion/ }));
+    await waitFor(() => expect(ingestion.uploadLecture).toHaveBeenCalledTimes(3));
+    expect(ingestion.uploadLecture.mock.calls[2][0].idempotencyKey).not.toBe(first);
+  });
+
+  it("links to the existing lecture when the content is a duplicate", async () => {
+    ingestion.uploadLecture.mockRejectedValue(
+      Object.assign(new Error("This lecture is already in your library."), {
+        status: 409,
+        data: { code: "duplicate_lecture", details: { lecture_id: "existing-1" } },
+      })
+    );
+    renderAt("/lectures/new");
+    await fillValidVideo();
+    fireEvent.click(screen.getByRole("button", { name: /Start Ingestion/ }));
+    expect(await screen.findByText(/already in your library/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Open the existing lecture" }).getAttribute("href")).toBe(
+      "/lectures/existing-1/processing"
+    );
+  });
+
+  it("shows the server's rejection and keeps the form", async () => {
+    ingestion.uploadLecture.mockRejectedValue(
+      Object.assign(new Error("This file isn't a supported video format (MP4, MOV, WebM, MKV)."), {
+        status: 415,
+        data: { code: "unsupported_media" },
+      })
+    );
+    renderAt("/lectures/new");
+    await fillValidVideo();
+    fireEvent.click(screen.getByRole("button", { name: /Start Ingestion/ }));
+    expect(await screen.findByText(/isn't a supported video format/)).toBeTruthy();
+    expect(screen.getByLabelText(/Lecture Title/).value).toBe("cs229 lecture04");
+    expect(screen.queryByText("Lecture added")).toBeNull();
+  });
+
+  it("can cancel an upload in progress", async () => {
+    ingestion.uploadLecture.mockImplementation(
+      ({ signal, onProgress }) =>
+        new Promise((_, reject) => {
+          onProgress({ loaded: 10, total: 100 });
+          signal.addEventListener("abort", () => reject(new DOMException("Upload cancelled", "AbortError")));
+        })
+    );
+    renderAt("/lectures/new");
+    await fillValidVideo();
+    fireEvent.click(screen.getByRole("button", { name: /Start Ingestion/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel upload" }));
+    expect(await screen.findByText("Upload cancelled. Nothing was saved.")).toBeTruthy();
+  });
+
+  it("submits a YouTube URL with rights confirmation", async () => {
+    ingestion.submitSourceUrl.mockResolvedValue(
+      accepted({ lecture: { id: "lec-2", title: "MIT 6.006", status: "QUEUED", source_type: "url", source_url: "x" } })
+    );
+    renderAt("/lectures/new");
+    fireEvent.click(screen.getByRole("tab", { name: /YouTube/ }));
+    fireEvent.change(screen.getByLabelText("Video URL"), { target: { value: "https://youtu.be/ZA-tUyM_y7s" } });
+    fireEvent.click(screen.getByLabelText(/I have the right to use this video/));
+    fireEvent.change(screen.getByLabelText(/Subject \/ Discipline/), { target: { value: "Algorithms" } });
+    fireEvent.click(screen.getByRole("button", { name: /Start Ingestion/ }));
+
+    expect(await screen.findByText("Lecture added")).toBeTruthy();
+    expect(ingestion.submitSourceUrl).toHaveBeenCalledWith(
+      expect.objectContaining({ url: "https://youtu.be/ZA-tUyM_y7s", rightsConfirmed: true })
+    );
+  });
+});
+
+describe("Processing details", () => {
+  const details = (job, extra = {}) => ({
+    lecture: {
+      id: "lec-1",
+      title: "Real Analysis",
+      status: extra.status ?? "TRANSCRIBING",
+      source_type: "audio",
+      source_url: null,
+    },
+    job: {
+      id: "job-1",
+      current_stage: "TRANSCRIBING",
+      attempt_count: 1,
+      max_attempts: 3,
+      error_code: null,
+      error_message: null,
+      retryable: null,
+      status_detail: null,
+      queued_at: "2026-10-01T10:00:00Z",
+      started_at: null,
+      finished_at: null,
+      failed_at: null,
+      next_attempt_at: null,
+      updated_at: "2026-10-01T10:00:00Z",
+      ...job,
+    },
+    stage_runs: [
+      {
+        stage: "EXTRACTING_AUDIO",
+        attempt: 1,
+        status: "succeeded",
+        started_at: "2026-10-01T10:00:01Z",
+        finished_at: "2026-10-01T10:00:03Z",
+        duration_ms: 2400,
+        error_code: null,
+      },
+    ],
+    media: [{ kind: "original", mime_type: "audio/mpeg", file_size: 96000, duration_seconds: 3, probe: {} }],
+    implemented_stages: ["EXTRACTING_AUDIO"],
+  });
+
+  it("shows completed stages, measured timings and the honest waiting state", async () => {
+    ingestion.getProcessingDetails.mockResolvedValue(
+      details({
+        status: "waiting",
+        status_detail: "Transcription isn't available yet. Processing will continue from here once it is.",
+      })
+    );
+    renderAt("/lectures/lec-1/processing");
+    expect(await screen.findByText(/Transcription isn't available yet/)).toBeTruthy();
+    const extraction = screen.getByText("Audio extraction").closest("li");
+    expect(within(extraction).getByLabelText("Completed")).toBeTruthy();
+    expect(within(extraction).getByText("2.4 s")).toBeTruthy();
+    expect(within(screen.getByText("Transcription").closest("li")).getByLabelText("Waiting")).toBeTruthy();
+    expect(screen.getAllByText("Not available yet").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/FLAC/)).toBeNull(); // derived audio is temporary worker data, never listed as stored media
+    expect(screen.queryByText(/%/)).toBeNull();
+  });
+
+  it("shows the failure reason and retries a retryable failure", async () => {
+    ingestion.getProcessingDetails.mockResolvedValue(
+      details(
+        {
+          status: "failed",
+          current_stage: "EXTRACTING_AUDIO",
+          error_code: "service_unavailable",
+          error_message: "A storage service was temporarily unavailable.",
+          retryable: true,
+          failed_at: "2026-10-01T10:05:00Z",
+        },
+        { status: "FAILED" }
+      )
+    );
+    ingestion.retryProcessing.mockResolvedValue({});
+    renderAt("/lectures/lec-1/processing");
+    expect(await screen.findByText("Audio extraction couldn't be completed")).toBeTruthy();
+    expect(screen.getByText("A storage service was temporarily unavailable.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Retry Processing/ }));
+    await waitFor(() => expect(ingestion.retryProcessing).toHaveBeenCalledWith("lec-1"));
+    expect(await screen.findByText(/Processing restarted/)).toBeTruthy();
+  });
+
+  it("doesn't offer retry when it can't help", async () => {
+    ingestion.getProcessingDetails.mockResolvedValue(
+      details(
+        {
+          status: "failed",
+          current_stage: "EXTRACTING_AUDIO",
+          error_code: "no_audio_stream",
+          error_message: "This file has no audio track.",
+          retryable: false,
+          failed_at: "2026-10-01T10:05:00Z",
+        },
+        { status: "FAILED" }
+      )
+    );
+    renderAt("/lectures/lec-1/processing");
+    expect(await screen.findByText("This file has no audio track.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Retry Processing/ })).toBeNull();
+    expect(screen.getByText(/Retrying won't fix this/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Details" }));
+    expect(screen.getByText("no_audio_stream")).toBeTruthy();
+  });
+
+  it("shows not found for another user's lecture", async () => {
+    ingestion.getProcessingDetails.mockRejectedValue(Object.assign(new Error("Lecture not found."), { status: 404 }));
+    renderAt("/lectures/lec-9/processing");
+    expect(await screen.findByText("Lecture not found")).toBeTruthy();
+  });
+});
+
+describe("Library processing states", () => {
+  it("shows the failure reason and a working retry for retryable failures", async () => {
+    const failedLecture = lecture({
+      title: "Metric Spaces",
+      status: "FAILED",
+      job: {
+        status: "failed",
+        current_stage: "EXTRACTING_AUDIO",
+        error_code: "service_unavailable",
+        error_message: "Storage was temporarily unavailable.",
+        retryable: true,
+      },
+    });
+    lectures.listLectures.mockResolvedValue(page([failedLecture]));
+    ingestion.retryProcessing.mockResolvedValue({});
+    renderAt("/library");
+    const card = (await screen.findByText("Metric Spaces", { selector: "a" })).closest("article");
+    expect(within(card).getByText("Storage was temporarily unavailable.")).toBeTruthy();
+    fireEvent.click(within(card).getByRole("button", { name: /Retry Processing/ }));
+    await waitFor(() => expect(ingestion.retryProcessing).toHaveBeenCalledWith(failedLecture.id));
+    await waitFor(() => expect(lectures.listLectures).toHaveBeenCalledTimes(2));
+  });
+
+  it("labels a job waiting at the phase boundary honestly", async () => {
+    lectures.listLectures.mockResolvedValue(
+      page([
+        lecture({
+          title: "Waiting Lecture",
+          status: "TRANSCRIBING",
+          job: { status: "waiting", current_stage: "TRANSCRIBING", error_code: null },
+        }),
+      ])
+    );
+    renderAt("/library");
+    const card = (await screen.findByText("Waiting Lecture", { selector: "a" })).closest("article");
+    expect(within(card).getByText(/Waiting: Transcription isn't available yet/)).toBeTruthy();
+    expect(within(card).getByText("Waiting")).toBeTruthy();
   });
 });
 

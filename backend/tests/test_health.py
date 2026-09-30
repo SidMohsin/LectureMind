@@ -23,3 +23,16 @@ async def test_cors_allows_configured_origin_only(client):
 
     denied = await client.options("/me", headers={"Origin": "https://evil.example", **preflight})
     assert "access-control-allow-origin" not in denied.headers
+
+
+async def test_cors_preflight_allows_the_idempotency_header_on_uploads(client):
+    response = await client.options(
+        "/lectures/uploads",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "authorization,idempotency-key",
+        },
+    )
+    assert response.status_code == 200
+    assert "idempotency-key" in response.headers["access-control-allow-headers"].lower()

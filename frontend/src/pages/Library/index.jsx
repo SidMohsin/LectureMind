@@ -12,6 +12,7 @@ import LectureItem from "../../components/lectures/LectureItem";
 import DeleteLectureDialog from "../../components/lectures/DeleteLectureDialog";
 import { useAsyncData } from "../../hooks/useAsyncData";
 import { listLectures, listSubjects } from "../../services/lectures";
+import { isActive } from "../../lectures/lectureStatus";
 import "./Library.css";
 
 const STATUS_OPTIONS = [
@@ -36,6 +37,8 @@ const SORT_OPTIONS = [
 ];
 
 const PAGE_SIZES = [10, 25, 50];
+// Refresh quietly while any lecture on the page is still queued or processing.
+const POLL = { intervalMs: 4000, while: (data) => data?.items.some(isActive) };
 const VIEW_KEY = "lecturemind.library.view";
 
 function readView() {
@@ -65,7 +68,8 @@ export default function Library() {
   const lectures = useAsyncData(
     (options) =>
       listLectures({ q, subject, status, sourceType, sort, limit: pageSize, offset: (page - 1) * pageSize }, options),
-    [q, subject, status, sourceType, sort, pageSize, page]
+    [q, subject, status, sourceType, sort, pageSize, page],
+    { poll: POLL }
   );
   const subjects = useAsyncData((options) => listSubjects(options), []);
 
@@ -259,7 +263,13 @@ export default function Library() {
           <>
             <div className={`library-list library-list--${view} ${lectures.status === "loading" ? "is-refreshing" : ""}`}>
               {data.items.map((lecture) => (
-                <LectureItem key={lecture.id} lecture={lecture} layout={view} onDelete={setPendingDelete} />
+                <LectureItem
+                  key={lecture.id}
+                  lecture={lecture}
+                  layout={view}
+                  onDelete={setPendingDelete}
+                  onRetried={lectures.reload}
+                />
               ))}
             </div>
 
