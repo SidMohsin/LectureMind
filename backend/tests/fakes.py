@@ -19,6 +19,11 @@ UNIQUE = {
     "processing_jobs": [("lecture_id",)],
     "lecture_media": [("lecture_id", "kind")],
     "processing_stage_runs": [("job_id", "stage", "attempt")],
+    "transcripts": [("lecture_id",)],
+    "transcript_segments": [("lecture_id", "sequence")],
+    "lecture_chunks": [("id",), ("lecture_id", "sequence")],
+    "chapters": [("lecture_id", "sequence")],
+    "lecture_intelligence": [("lecture_id",)],
 }
 
 
@@ -97,7 +102,10 @@ class FakeAdmin:
             },
             "processing_stage_runs": {"status": "running", "started_at": now().isoformat()},
             "lecture_media": {"probe": {}},
+            "lecture_chunks": {"embedding": None, "embedding_model": None},
         }.get(table, {})
+        if table in ("transcripts", "transcript_segments", "chapters", "lecture_intelligence"):
+            row.pop("id", None)  # these tables are keyed by lecture (+ sequence), not by id
         row = {**defaults, **row}
         for keys in UNIQUE[table]:
             if any(row.get(k) is None for k in keys):
@@ -110,6 +118,19 @@ class FakeAdmin:
                 raise ConflictError(f"duplicate {keys}")
         self.tables[table].append(row)
         return copy.deepcopy(row)
+
+    async def insert_many(self, table, rows, *, on_conflict=None, batch=500):
+        self.calls.append(("insert_many", table, len(rows)))
+        for row in rows:
+            await self.insert(table, row, on_conflict=on_conflict)
+
+    async def select_all(self, table, params, *, page=1000):
+        rows = await self.select(table, params)
+        order = params.get("order", "")
+        if order:
+            column, _, direction = order.split(",")[0].partition(".")
+            rows.sort(key=lambda r: r.get(column), reverse=direction.startswith("desc"))
+        return rows
 
     async def update(self, table, filters, values):
         self.calls.append(("update", table, dict(filters), dict(values)))

@@ -60,9 +60,38 @@ class Settings(BaseSettings):
     max_media_duration_seconds: int = 4 * 3600
     source_url_downloads_enabled: bool = True
 
-    # LLM provider (reserved for Phase 6 RAG; unused so far)
-    llm_provider: str = ""
+    # --- Lecture intelligence (Phase 5) ---
+    # Where downloaded speech/embedding models are cached (outside the repo).
+    model_cache_dir: str = ""
+    # faster-whisper (CTranslate2): model size/name, device and precision.
+    transcription_model: str = "small"
+    transcription_device: str = "cpu"
+    transcription_compute_type: str = "int8"
+    transcription_beam_size: int = 5
+    # Empty = detect the spoken language.
+    transcription_language: str = ""
+    # fastembed (ONNX) sentence-embedding model and its output dimension.
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
+    embedding_dimension: int = 384
+    # Chunking targets, in estimated tokens.
+    chunk_min_tokens: int = 200
+    chunk_max_tokens: int = 400
+    chunk_overlap_tokens: int = 50
+    # OpenAI-compatible chat completions API (OpenAI, Groq, Gemini's OpenAI
+    # endpoint, a local Ollama server, ...).
+    llm_base_url: str = ""
     llm_api_key: str = ""
+    llm_model: str = ""
+    llm_temperature: float = 0.2
+    llm_timeout_seconds: int = 180
+    # Transcript text per LLM request; longer lectures are summarised in ordered parts.
+    llm_window_tokens: int = 12000
+    # Upper bound on each response. Some providers count it against per-minute limits.
+    llm_max_output_tokens: int = 4000
+    # How often to wait-and-retry a single request the provider rate-limits (HTTP 429).
+    llm_rate_limit_retries: int = 6
+    # For reasoning models (e.g. gpt-oss, o-series): "low" | "medium" | "high". Empty = not sent.
+    llm_reasoning_effort: str = ""
 
     @field_validator("redis_url", mode="after")
     @classmethod
@@ -97,6 +126,14 @@ class Settings(BaseSettings):
     @property
     def ingestion_configured(self) -> bool:
         return self.supabase_configured and bool(self.supabase_service_role_key)
+
+    @property
+    def model_cache_path(self) -> Path:
+        return Path(self.model_cache_dir) if self.model_cache_dir else Path.home() / ".cache" / "lecturemind-models"
+
+    @property
+    def llm_configured(self) -> bool:
+        return bool(self.llm_base_url and self.llm_model)
 
     @property
     def work_path(self) -> Path:

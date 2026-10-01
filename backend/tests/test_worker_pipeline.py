@@ -27,6 +27,13 @@ def anyio_backend():
     return "asyncio"
 
 
+@pytest.fixture(autouse=True)
+def audio_stage_only(monkeypatch):
+    """These tests cover ingestion + the audio stage; later stages (with real models) are
+    tested separately, so the pipeline stops at the first unregistered stage here."""
+    monkeypatch.setattr(pipeline, "STAGE_HANDLERS", {"EXTRACTING_AUDIO": pipeline.STAGE_HANDLERS["EXTRACTING_AUDIO"]})
+
+
 @pytest.fixture
 def settings(tmp_path):
     return Settings(

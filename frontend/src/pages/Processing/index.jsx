@@ -129,7 +129,9 @@ export default function Processing() {
 
       {job && job.status !== "failed" && (
         <p className={`processing-activity ${info.waiting ? "processing-activity--waiting" : ""}`} role="status">
-          {job.status === "running" && currentStage ? `${currentStage.activity}…` : job.status_detail || info.label}
+          {job.status === "running" && currentStage
+            ? job.status_detail || `${currentStage.activity}…`
+            : job.status_detail || info.label}
         </p>
       )}
 

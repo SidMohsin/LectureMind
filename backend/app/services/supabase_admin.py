@@ -68,6 +68,35 @@ class ServiceSupabase:
         )
         return response.json()[0]
 
+    async def insert_many(self, table: str, rows: list[dict], *, on_conflict: str | None = None, batch: int = 500) -> None:
+        """Bulk insert (or upsert with on_conflict) in batches; returns nothing to keep payloads small."""
+        prefer = "return=minimal"
+        params = {}
+        if on_conflict:
+            prefer += ",resolution=merge-duplicates"
+            params["on_conflict"] = on_conflict
+        for start in range(0, len(rows), batch):
+            await self._send(
+                "POST",
+                f"{self._rest}/{table}",
+                label=table,
+                params=params,
+                json=rows[start : start + batch],
+                headers={"Prefer": prefer},
+                timeout=httpx.Timeout(60.0),
+            )
+
+    async def select_all(self, table: str, params: dict[str, str], *, page: int = 1000) -> list[dict]:
+        """All matching rows, paging past the API's per-request row limit. `params` must include an order."""
+        rows: list[dict] = []
+        offset = 0
+        while True:
+            batch = await self.select(table, {**params, "limit": str(page), "offset": str(offset)})
+            rows.extend(batch)
+            if len(batch) < page:
+                return rows
+            offset += page
+
     async def update(self, table: str, filters: dict[str, str], values: dict) -> list[dict]:
         """Conditional update; returns the updated rows (empty when the filter matched nothing)."""
         response = await self._send(

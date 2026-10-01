@@ -35,6 +35,16 @@ class JobContext:
     def job_id(self) -> str:
         return self.job["id"]
 
+    async def report(self, detail: str) -> None:
+        """Show measurable progress on the job (e.g. minutes of audio transcribed)."""
+        rows = await self.admin.update(
+            "processing_jobs",
+            {"id": f"eq.{self.job_id}", "status": "eq.running", "lease_owner": f"eq.{self.worker_id}"},
+            {"status_detail": detail[:300]},
+        )
+        if not rows:
+            raise LeaseLost()
+
     async def ensure_active(self) -> None:
         """Renew the lease; raises LeaseLost if the job was taken over or its lecture deleted."""
         renewed = await self.admin.rpc(

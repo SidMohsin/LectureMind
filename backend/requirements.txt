@@ -8,3 +8,7 @@ pyjwt[crypto]>=2.9
 python-multipart>=0.0.20
 redis>=5.0
 yt-dlp>=2025.1.1
+# Lecture intelligence (Phase 5): CPU inference, no PyTorch
+faster-whisper>=1.2.1
+fastembed>=0.8.1
+numpy>=2.0

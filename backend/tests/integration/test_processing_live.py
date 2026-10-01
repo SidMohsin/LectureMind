@@ -27,6 +27,14 @@ def anyio_backend():
     return "asyncio"
 
 
+@pytest.fixture(autouse=True)
+def audio_stage_only(monkeypatch):
+    """Phase 4 scope: stop after audio extraction (Phase 5 stages have their own live test)."""
+    from app.workers import pipeline
+
+    monkeypatch.setattr(pipeline, "STAGE_HANDLERS", {"EXTRACTING_AUDIO": pipeline.STAGE_HANDLERS["EXTRACTING_AUDIO"]})
+
+
 @pytest.fixture(scope="module")
 def tone(tmp_path_factory):
     path = tmp_path_factory.mktemp("live") / f"tone-{uuid.uuid4().hex[:6]}.mp3"

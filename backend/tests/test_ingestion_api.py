@@ -11,7 +11,7 @@ from app.main import app
 from app.services.ingestion import Ingestion
 from app.services.sources import SourceInfo, YouTubeProvider
 from app.services.supabase_admin import StorageObjectTooLarge
-from app.workers.lifecycle import ProcessingError
+from app.workers.lifecycle import PIPELINE_STAGES, ProcessingError
 
 from .conftest import make_token
 from .fakes import FakeAdmin, FakeQueue
@@ -362,7 +362,7 @@ async def test_processing_details_for_owner_only(client, admin):
     assert response.status_code == 200
     body = response.json()
     assert body["job"]["status"] == "failed" and body["stage_runs"][0]["duration_ms"] == 1200
-    assert body["implemented_stages"] == ["EXTRACTING_AUDIO"]
+    assert body["implemented_stages"] == list(PIPELINE_STAGES)
 
     app.dependency_overrides[get_user_db] = lambda: UserDb(admin, OTHER)
     assert (await client.get(f"/lectures/{lecture['id']}/processing", headers=auth(OTHER))).status_code == 404

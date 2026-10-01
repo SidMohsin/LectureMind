@@ -18,15 +18,21 @@ from app.workers.lifecycle import (
     next_stage,
     require_lecture_transition,
 )
+from app.workers import intelligence_stages
 from app.workers.stages import extract_audio
 
 logger = logging.getLogger(__name__)
 
 StageHandler = Callable[[JobContext], Awaitable[dict]]
 
-# Phase 4 implements audio extraction. Phase 5 registers TRANSCRIBING onwards here.
 STAGE_HANDLERS: dict[str, StageHandler] = {
     "EXTRACTING_AUDIO": extract_audio,
+    "TRANSCRIBING": intelligence_stages.transcribe,
+    "CLEANING": intelligence_stages.clean,
+    "CHUNKING": intelligence_stages.chunk,
+    "EMBEDDING": intelligence_stages.embed,
+    "INDEXING": intelligence_stages.index,
+    "GENERATING_INTELLIGENCE": intelligence_stages.generate_intelligence,
 }
 
 STAGE_LABELS = {

@@ -8,7 +8,7 @@ timestamps.
 Full product/technical source of truth: the PRD, Architecture, Design, Roadmap, Memory
 and Testing documents supplied with this project.
 
-## Current status: Phase 4 — Lecture Ingestion + Processing
+## Current status: Phase 5 — Lecture Intelligence
 
 Implemented so far:
 
@@ -22,17 +22,16 @@ Implemented so far:
 - **Phase 4:** real ingestion of video/audio uploads and YouTube URLs, a Redis-backed job
   queue, a separate processing worker, FFmpeg audio extraction, a persistent processing
   lifecycle with retries, and a Processing Details page.
+- **Phase 5:** timestamped transcription (faster-whisper), conservative transcript
+  cleaning, sentence-aware chunking with overlap, sentence embeddings stored in pgvector
+  (HNSW index + an RLS-respecting retrieval function), and grounded lecture intelligence
+  (summary, chapters, topics, key concepts, definitions, keywords, important points,
+  examples) from an LLM behind a provider interface. Every pipeline stage is implemented,
+  so lectures now reach READY.
 
-**Phase boundary.** Phase 4 implements the `EXTRACTING_AUDIO` stage. Transcription and
-everything after it are Phase 5. When a lecture reaches a stage that isn't implemented
-yet, its job **waits** there, labelled "Transcription isn't available yet". It is never
-marked READY and no stage output is faked. When Phase 5 registers the next stage
-(`STAGE_HANDLERS` in `backend/app/workers/pipeline.py`), waiting jobs resume from that
-stage automatically.
-
-Not implemented yet: Whisper transcription, transcripts, chunking, embeddings/pgvector,
-lecture intelligence, the lecture workspace, grounded Q&A, search, question history,
-deployment and evaluation.
+Not implemented yet (Phase 6+): the lecture workspace UI for transcripts and notes,
+grounded Q&A / chat, a query endpoint, search, question history, deployment and evaluation.
+The retrieval function exists and is tested, but nothing user-facing calls it yet.
 
 ## Project structure
 
@@ -42,7 +41,8 @@ backend/               FastAPI application + processing worker
   app/api/             Routers (health, me, lectures, ingestion) and auth dependencies
   app/core/            Config, token verification, errors, logging
   app/services/        Supabase access (user-scoped + service role), ingestion,
-                       Redis queue, source-URL providers
+                       Redis queue, source-URL providers, LLM provider (llm.py)
+  app/intelligence/    Transcription, cleaning, chunking, embeddings, grounded generation
   app/repositories/    Table-level queries
   app/workers/         Lifecycle rules, pipeline runner, stages, FFmpeg/ffprobe,
                        per-job workspaces, worker entry point (main.py)
@@ -120,6 +120,13 @@ runs in the worker. Run more worker processes to process more lectures in parall
 | `MAX_VIDEO_BYTES`, `MAX_AUDIO_BYTES`, `MAX_MEDIA_DURATION_SECONDS` | Authoritative ingestion limits. |
 | `SOURCE_URL_DOWNLOADS_ENABLED` | Allow YouTube URL ingestion. |
 | `WORKER_*` | Lease, heartbeat, recovery-sweep and retry-backoff timings. |
+| `MODEL_CACHE_DIR` | Where speech/embedding models are downloaded (default `~/.cache/lecturemind-models`). |
+| `TRANSCRIPTION_MODEL`, `_DEVICE`, `_COMPUTE_TYPE`, `_BEAM_SIZE`, `_LANGUAGE` | faster-whisper settings (default `small`, `cpu`, `int8`, 5, auto-detect). |
+| `EMBEDDING_MODEL`, `EMBEDDING_DIMENSION` | fastembed model (default `BAAI/bge-small-en-v1.5`, 384). The dimension must match the `vector(384)` column. |
+| `CHUNK_MIN_TOKENS`, `CHUNK_MAX_TOKENS`, `CHUNK_OVERLAP_TOKENS` | Chunk size targets (200 / 400 / 50 estimated tokens). |
+| `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` | Any OpenAI-compatible Chat Completions API (OpenAI, Groq, Gemini's OpenAI endpoint, Ollama). **Server-only.** |
+| `LLM_WINDOW_TOKENS`, `LLM_MAX_OUTPUT_TOKENS` | Transcript per request and response cap. Lower both on providers with small per-minute token limits. |
+| `LLM_TEMPERATURE`, `LLM_TIMEOUT_SECONDS`, `LLM_RATE_LIMIT_RETRIES`, `LLM_REASONING_EFFORT` | Generation settings; `LLM_REASONING_EFFORT=low` for reasoning models such as `gpt-oss`. |
 
 ### Endpoints
 
@@ -138,8 +145,12 @@ runs in the worker. Run more worker processes to process more lectures in parall
 
 ```bash
 pytest                   # offline: API, lifecycle, pipeline, worker (real FFmpeg), queue
-pytest -m integration    # live: Supabase auth/RLS/storage, ingestion + worker end to end, Redis
+pytest -m integration    # live: Supabase auth/RLS/storage, ingestion + worker, pgvector retrieval, Redis
+pytest -m models         # real faster-whisper + fastembed models (downloads them on first run)
 ```
+
+Stop any running worker before `pytest -m integration`: a live worker on the same Redis
+queue can pick up the test's job and run it through the full pipeline.
 
 The live suite needs `backend/.env.test` (copy `.env.test.example`) pointing at a
 **development** project. It creates and deletes throwaway `lecturemind-test-*` users.
@@ -153,9 +164,24 @@ Upload / YouTube URL
   → job id pushed to Redis                                         (notification only)
   → worker claims the job with a lease (database time), heartbeats while running
   → EXTRACTING_AUDIO: download to a private temp dir → ffprobe validation
-    → FFmpeg → 16 kHz mono FLAC → processed/audio.flac (fixed path, upsert)
-  → next stage (TRANSCRIBING, Phase 5) → job waits until it exists
+    → FFmpeg → 16 kHz mono FLAC in the job's temp workspace (never uploaded)
+  → TRANSCRIBING: faster-whisper with voice-activity filtering → timestamped segments
+  → CLEANING: whitespace/punctuation fixes, removes non-speech and repeated segments;
+    never adds words or changes timestamps (the raw text is kept alongside)
+  → CHUNKING: whole segments → ~200-400-token chunks, sentence-aware, ~50-token overlap
+  → EMBEDDING: fastembed (ONNX, no PyTorch) → 384-dim vectors
+  → INDEXING: pgvector HNSW (cosine) + a self-retrieval check
+  → GENERATING_INTELLIGENCE: LLM notes, grounded in cited chunks → READY
 ```
+
+**Grounding.** The LLM sees the transcript as numbered, timestamped chunks marked as
+untrusted data, and must cite chunk numbers for every item. The server then checks the
+answer: items without valid citations are dropped, keywords and definition terms must
+occur in the transcript, and chapter times come from the cited chunks rather than the
+model. A bad answer gets one repair attempt. Long lectures are summarised in ordered parts,
+merged level by level, then synthesised. Definitions, keywords and examples are carried
+over from the validated part notes, not regenerated. Models, settings, timings, token
+counts and dropped items are stored with the results for evaluation.
 
 - **Source of truth:** Postgres. Redis only says "job X may be ready"; a worker must still
   claim the job, so duplicate or stale messages are harmless.
@@ -194,6 +220,9 @@ Upload / YouTube URL
   argument lists (no shell) and timeouts, in a private per-run temp directory that is
   always removed.
 - The `lectures` bucket is private; objects are reachable only by their owner.
+- Transcripts, chunks, embeddings, chapters and intelligence are readable only by the
+  lecture's owner (RLS) and writable only by the service role. `match_lecture_chunks`
+  runs with the caller's rights (SECURITY INVOKER), so retrieval can't cross users.
 
 ## Known limitations
 
@@ -203,11 +232,19 @@ Upload / YouTube URL
   default. Bind it to localhost (`bind 127.0.0.1` in `redis.windows-service.conf`) or use a
   password-protected Redis for anything beyond local development.
 - YouTube may block anonymous downloads; such lectures fail with a clear, non-fake reason.
+- Transcription runs on CPU (about 0.2x real time for the `small` model on a 14-thread
+  laptop CPU, so roughly 15 minutes per hour of lecture).
+- On Groq's free tier (8,000 tokens per minute, counting prompt plus `max_tokens`),
+  generation for a long lecture spends most of its time waiting out rate limits (about 5
+  minutes for a 75-minute lecture). With `LLM_MAX_OUTPUT_TOKENS=2500`, the final synthesis
+  can reach the output cap. The notes stay valid and grounded but may be shorter, and this
+  is recorded as `finish_reason: length` in `lecture_intelligence.generation`. A paid tier
+  or a larger cap removes it.
 
 ## Tech stack
 
 - **Frontend:** React + JavaScript (no TypeScript), React Router, Vite, `@supabase/supabase-js`
 - **Backend:** FastAPI + Python, PyJWT, httpx, redis-py, FFmpeg/ffprobe, yt-dlp
 - **Platform:** Supabase Auth, PostgreSQL, Storage; Redis
-- **Planned:** Whisper/faster-whisper, sentence embeddings, pgvector retrieval, an LLM
-  provider abstraction
+- **Intelligence:** faster-whisper (CTranslate2), fastembed (ONNX Runtime), pgvector, an
+  OpenAI-compatible LLM provider. No PyTorch.
