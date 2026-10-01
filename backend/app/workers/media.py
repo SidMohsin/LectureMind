@@ -176,3 +176,30 @@ async def normalize_audio(ffmpeg: str, source: Path, destination: Path, timeout:
             "The audio couldn't be extracted from this file. It may be corrupted.",
             details={"ffmpeg": _tail(stderr), "exit_code": code},
         )
+
+
+PLAYBACK_AUDIO_NAME = "playback.m4a"
+PLAYBACK_AUDIO_MIME = "audio/mp4"
+
+
+async def encode_playback_audio(ffmpeg: str, source: Path, destination: Path, bitrate_kbps: int, timeout: float) -> None:
+    """Encode the first audio stream as mono AAC in MP4 for in-browser playback.
+
+    `+faststart` puts the index at the front so playback and seeking can begin
+    before the whole file has downloaded (with HTTP range requests).
+    """
+    args = [
+        ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+        "-i", str(source),
+        "-map", "0:a:0", "-vn", "-ac", "1",
+        "-c:a", "aac", "-b:a", f"{bitrate_kbps}k",
+        "-movflags", "+faststart",
+        str(destination),
+    ]  # fmt: skip
+    code, _, stderr = await _run(args, timeout)
+    if code != 0 or not destination.exists() or destination.stat().st_size == 0:
+        raise ProcessingError(
+            "playback_encoding_failed",
+            "The lecture's audio couldn't be prepared for playback.",
+            details={"ffmpeg": _tail(stderr), "exit_code": code},
+        )

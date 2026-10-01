@@ -1,0 +1,200 @@
+.transcript {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.transcript__toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+}
+
+.transcript__search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1 1 220px;
+  height: 38px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-tertiary);
+}
+
+.transcript__search:focus-within {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+
+.transcript__search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: var(--fs-body-sm);
+}
+
+.transcript__matches {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-text-secondary);
+  font-size: var(--fs-caption);
+}
+
+.transcript__matches button,
+.transcript__follow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  min-width: 30px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.transcript__matches button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.transcript__follow {
+  padding: 0 var(--space-3);
+  font-size: var(--fs-caption);
+  font-weight: 500;
+}
+
+.transcript__follow[aria-pressed="true"] strong {
+  color: var(--color-success);
+}
+
+.transcript__list {
+  /* Containing block for row contents (e.g. screen-reader-only labels) so nothing escapes the scroll area. */
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  max-height: 560px;
+  margin: 0;
+  padding: var(--space-2);
+  list-style: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.transcript__segment {
+  display: grid;
+  grid-template-columns: 76px 1fr;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-left: 3px solid transparent;
+  border-radius: var(--radius-sm);
+}
+
+.transcript__segment + .transcript__segment {
+  margin-top: 2px;
+}
+
+.transcript__segment:hover {
+  background: var(--color-surface-muted);
+}
+
+.transcript__segment.is-active {
+  border-left-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.transcript__segment.is-match {
+  box-shadow: inset 0 0 0 1px var(--color-warning);
+}
+
+.transcript__time {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  align-self: start;
+  padding: 2px var(--space-2);
+  border: 0;
+  border-radius: 6px;
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+  font-size: var(--fs-meta);
+  cursor: pointer;
+}
+
+.transcript__time:hover {
+  color: var(--color-accent);
+}
+
+.is-active .transcript__time {
+  background: var(--color-surface);
+  color: var(--color-accent);
+  font-weight: 700;
+}
+
+.transcript__playing {
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.transcript__text {
+  margin: 0;
+  color: var(--color-text-primary);
+  line-height: var(--lh-body);
+  cursor: pointer;
+}
+
+.transcript__text mark {
+  padding: 0 2px;
+  border-radius: 3px;
+  background: var(--color-warning-bg);
+  color: inherit;
+}
+
+.transcript__footer {
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-tertiary);
+  font-size: var(--fs-caption);
+}
+
+.transcript__empty {
+  padding: var(--space-8);
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+@media (max-width: 600px) {
+  .transcript__segment {
+    grid-template-columns: 1fr;
+    gap: var(--space-1);
+  }
+  .transcript__time {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-2);
+    justify-self: start;
+  }
+  .transcript__list {
+    max-height: 420px;
+  }
+}

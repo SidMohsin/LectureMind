@@ -1,9 +1,10 @@
 """Stage implementations. Each takes the job context and returns details recorded on its stage run.
 
-Storage policy: only user-provided source media (the original upload) is persisted in
-Supabase Storage. Derived audio is a temporary artifact of the worker: it is written
-to the job's private workspace, consumed by the stages that need it, and deleted with
-the workspace when the run ends (success or failure).
+Storage policy: user uploads are persisted as their original. Lectures without an upload
+(source URLs) get one compact private playback rendition (see app/workers/playback.py) so
+they can be played in the workspace. The normalized transcription audio is a temporary
+artifact of the worker: it is written to the job's private workspace, consumed by the
+stages that need it, and deleted with the workspace when the run ends (success or failure).
 """
 
 import hashlib
@@ -16,6 +17,7 @@ from app.services.sources import provider_named
 from app.services.supabase_admin import StorageObjectTooLarge
 from app.workers.context import AudioArtifact, JobContext
 from app.workers.lifecycle import ProcessingError
+from app.workers.playback import store_playback
 from app.workers.media import NORMALIZED_AUDIO_NAME, TARGET_CHANNELS, TARGET_SAMPLE_RATE, normalize_audio, probe, validate_input
 
 
@@ -55,7 +57,7 @@ async def _acquire_source(ctx: JobContext):
     return source, None
 
 
-async def prepare_audio(ctx: JobContext) -> AudioArtifact:
+async def prepare_audio(ctx: JobContext, *, keep_source: bool = False) -> AudioArtifact:
     """The lecture's audio as 16 kHz mono FLAC in the job workspace (the input for transcription).
 
     Later stages call this instead of relying on a previous stage's files: within one run
@@ -84,8 +86,8 @@ async def prepare_audio(ctx: JobContext) -> AudioArtifact:
         raise ProcessingError(
             "audio_extraction_failed", "The extracted audio wasn't in the expected format.", details=result.as_record()
         )
-    # The source is no longer needed; free the disk before later stages run.
-    if source != output:
+    # The source is no longer needed (unless the caller asked to keep it); free the disk.
+    if source != output and not keep_source:
         source.unlink(missing_ok=True)
 
     ctx.audio = AudioArtifact(
@@ -106,6 +108,7 @@ async def prepare_audio(ctx: JobContext) -> AudioArtifact:
         },
         input_probe=info,
         original_media=original,
+        source_path=source if keep_source and source != output else None,
     )
     return ctx.audio
 
@@ -116,8 +119,16 @@ async def extract_audio(ctx: JobContext) -> dict:
     Nothing derived is uploaded. Persisted results are facts only: the lecture's duration,
     the original's probe data, and this stage run's measured details.
     """
-    audio = await prepare_audio(ctx)
+    audio = await prepare_audio(ctx, keep_source=ctx.lecture["source_type"] == "url")
     await ctx.ensure_active()
+
+    playback = {}
+    if audio.source_path is not None:
+        playback = await store_playback(
+            ctx.admin, ctx.settings, ctx.lecture, audio.source_path, audio.details["input_duration_seconds"], ctx.workspace
+        )
+        audio.source_path.unlink(missing_ok=True)
+        audio.source_path = None
 
     if audio.original_media:
         await ctx.admin.update(
@@ -128,4 +139,4 @@ async def extract_audio(ctx: JobContext) -> dict:
     await ctx.admin.update(
         "lectures", {"id": f"eq.{ctx.lecture['id']}"}, {"duration_seconds": round(audio.details["input_duration_seconds"])}
     )
-    return {**audio.details, "output_sha256": audio.checksum_sha256}
+    return {**audio.details, "output_sha256": audio.checksum_sha256, **playback}

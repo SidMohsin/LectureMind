@@ -7,7 +7,7 @@ history.py, profile.py) instead of growing a single flat file.
 
 from fastapi import APIRouter
 
-from app.api import health, ingestion, lectures, me
+from app.api import health, ingestion, lectures, me, workspace
 
 api_router = APIRouter()
 api_router.include_router(health.router)
@@ -16,3 +16,4 @@ api_router.include_router(me.router)
 # aren't shadowed by /lectures/{lecture_id}.
 api_router.include_router(ingestion.router)
 api_router.include_router(lectures.router)
+api_router.include_router(workspace.router)

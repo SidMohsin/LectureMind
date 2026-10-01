@@ -350,7 +350,24 @@ async def test_source_url_lecture_goes_through_the_same_pipeline(worker, admin, 
     monkeypatch.setattr(stages, "provider_named", lambda name: FakeProvider())
     lecture, job = await seed(admin, media, source_type="url")
     assert await worker.process(job["id"]) == "waiting"
-    assert admin.rows("processing_stage_runs", job_id=job["id"])[0]["details"]["input_format"]
+    details = admin.rows("processing_stage_runs", job_id=job["id"])[0]["details"]
+    assert details["input_format"]
+
+    # No upload exists to play, so a private playback rendition is stored and recorded.
+    assert details["playback"] == "stored" and details["playback_bitrate_kbps"] == 48
+    playback = admin.rows("lecture_media", lecture_id=lecture["id"], kind="playback")[0]
+    assert playback["storage_path"] == f"{lecture['user_id']}/{lecture['id']}/processed/playback.m4a"
+    assert playback["mime_type"] == "audio/mp4" and playback["file_size"] > 0 and playback["duration_seconds"] > 0
+
+
+def test_playback_bitrate_shrinks_to_fit_storage_and_gives_up_below_the_minimum(settings):
+    from app.workers.playback import playback_bitrate
+
+    assert playback_bitrate(settings, 4520) == 48  # CS229-length lecture: ~27 MB at 48 kbps
+    four_hours = playback_bitrate(settings, 4 * 3600)
+    assert settings.playback_min_bitrate_kbps <= four_hours < 48
+    assert four_hours * 1000 / 8 * 4 * 3600 <= settings.playback_max_bytes
+    assert playback_bitrate(settings, 20 * 3600) is None
 
 
 async def test_waiting_job_resumes_when_its_stage_is_implemented(worker, admin, media, monkeypatch):

@@ -3,8 +3,8 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-6);
-  padding-bottom: var(--space-6);
-  margin-bottom: var(--space-8);
+  padding-bottom: var(--space-5);
+  margin-bottom: var(--space-6);
   border-bottom: 1px solid var(--color-border);
 }
 
@@ -47,10 +47,143 @@
   color: var(--color-text-disabled);
 }
 
-@media (max-width: 600px) {
+.workspace-header__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* --- layout: desktop = player + transcript | questions + intelligence ------------------ */
+
+.workspace-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(340px, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.workspace-main,
+.workspace-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.workspace-area {
+  min-width: 0;
+}
+
+.workspace-area--chapters {
+  display: none;
+}
+
+.chapter-strip ol {
+  display: flex;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0 0 var(--space-1);
+  list-style: none;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+}
+
+.chapter-strip li {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+}
+
+.chapter-strip button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  max-width: 220px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chapter-strip button span {
+  color: var(--color-text-tertiary);
+  font-size: var(--fs-caption);
+  font-weight: 500;
+}
+
+.chapter-strip button.is-active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+/* Tablet: player across the top, transcript | questions + intelligence below. */
+@media (max-width: 1099px) {
+  .workspace-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--space-4);
+  }
+  .workspace-main {
+    display: contents;
+  }
+  .workspace-area--player {
+    grid-column: 1 / -1;
+  }
+  .workspace-area--transcript {
+    grid-column: 1;
+  }
+  .workspace-side {
+    grid-column: 2;
+    grid-row: 2;
+  }
+}
+
+/* Mobile: one column in study order — video, chapters, transcript, intelligence, questions. */
+@media (max-width: 767px) {
+  .workspace-layout {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .workspace-main,
+  .workspace-side {
+    display: contents;
+  }
+  .workspace-area--player {
+    order: 1;
+  }
+  .workspace-area--chapters {
+    display: block;
+    order: 2;
+  }
+  .workspace-area--transcript {
+    order: 3;
+  }
+  .workspace-area--intel {
+    order: 4;
+  }
+  .workspace-area--qa {
+    order: 5;
+  }
+}
+
+@media (max-width: 900px) {
   .workspace-header {
     flex-direction: column;
   }
+  .workspace-header__actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 600px) {
   .workspace-header__title {
     font-size: 1.6rem;
   }

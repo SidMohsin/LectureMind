@@ -118,3 +118,69 @@ export const CloseIcon = (p) => (
     <path d="M6 6l12 12M18 6L6 18" />
   </Icon>
 );
+export const PlayIcon = (p) => (
+  <Icon {...p}>
+    <path d="M7 4.5v15l12-7.5z" fill="currentColor" />
+  </Icon>
+);
+export const PauseIcon = (p) => (
+  <Icon {...p}>
+    <rect x="6" y="4.5" width="4" height="15" rx="1" fill="currentColor" />
+    <rect x="14" y="4.5" width="4" height="15" rx="1" fill="currentColor" />
+  </Icon>
+);
+export const BackIcon = (p) => (
+  <Icon {...p}>
+    <path d="M3 12a9 9 0 1 0 2.64-6.36L3 8" />
+    <path d="M3 3v5h5" />
+  </Icon>
+);
+export const ForwardIcon = (p) => (
+  <Icon {...p}>
+    <path d="M21 12a9 9 0 1 1-2.64-6.36L21 8" />
+    <path d="M21 3v5h-5" />
+  </Icon>
+);
+export const VolumeIcon = (p) => (
+  <Icon {...p}>
+    <path d="M4 9v6h4l5 4V5L8 9z" />
+    <path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" />
+  </Icon>
+);
+export const MuteIcon = (p) => (
+  <Icon {...p}>
+    <path d="M4 9v6h4l5 4V5L8 9z" />
+    <path d="M17 9l5 6M22 9l-5 6" />
+  </Icon>
+);
+export const FullscreenIcon = (p) => (
+  <Icon {...p}>
+    <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+  </Icon>
+);
+export const ClockIcon = (p) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v5l3 2" />
+  </Icon>
+);
+export const ChevronUpIcon = (p) => (
+  <Icon {...p}>
+    <path d="M6 15l6-6 6 6" />
+  </Icon>
+);
+export const ChevronDownIcon = (p) => (
+  <Icon {...p}>
+    <path d="M6 9l6 6 6-6" />
+  </Icon>
+);
+export const ExternalIcon = (p) => (
+  <Icon {...p}>
+    <path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
+  </Icon>
+);
+export const SendIcon = (p) => (
+  <Icon {...p}>
+    <path d="M5 12h14M13 6l6 6-6 6" />
+  </Icon>
+);

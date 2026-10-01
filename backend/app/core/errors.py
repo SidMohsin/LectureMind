@@ -7,6 +7,7 @@ a single parsing path regardless of which endpoint failed.
 import logging
 
 from fastapi import FastAPI, Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -61,7 +62,7 @@ def register_error_handlers(app: FastAPI) -> None:
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            content=error_body("Request validation failed.", code="validation_error", details=exc.errors()),
+            content=error_body("Request validation failed.", code="validation_error", details=jsonable_encoder(exc.errors(), custom_encoder={Exception: str})),
         )
 
     @app.exception_handler(Exception)

@@ -6,6 +6,7 @@ still filter by the authenticated user's id explicitly (defence in depth).
 """
 
 import logging
+from urllib.parse import quote
 
 import httpx
 from fastapi import HTTPException, status
@@ -55,6 +56,21 @@ class UserScopedSupabase:
         total = int(response.headers.get("content-range", "*/0").rsplit("/", 1)[1])
         return response.json(), total
 
+    async def select_all(self, table: str, params: dict[str, str], *, page: int = 1000) -> list[dict]:
+        """All matching rows, paging past the API's per-request row limit. `params` must include an order."""
+        rows: list[dict] = []
+        offset = 0
+        while True:
+            batch = await self.select(table, {**params, "limit": str(page), "offset": str(offset)})
+            rows.extend(batch)
+            if len(batch) < page:
+                return rows
+            offset += page
+
+    async def rpc(self, function: str, args: dict):
+        """Call a database function as the user (SECURITY INVOKER functions are subject to RLS)."""
+        return (await self._send("POST", f"{self._rest_url}/rpc/{function}", label=f"rpc {function}", json=args)).json()
+
     async def delete(self, table: str, params: dict[str, str]) -> list[dict]:
         response = await self._send(
             "DELETE", f"{self._rest_url}/{table}", label=table, params=params, headers={"Prefer": "return=representation"}
@@ -71,6 +87,20 @@ class UserScopedSupabase:
             json={"prefix": prefix, "limit": 1000, "offset": 0},
         )
         return response.json()
+
+    async def signed_url(self, bucket: str, path: str, expires_in: int) -> str:
+        """A time-limited URL for one private object. Storage policies decide whether the
+        user may sign it, so only the owner can. The URL supports HTTP range requests."""
+        response = await self._send(
+            "POST",
+            f"{self._storage_url}/object/sign/{bucket}/{quote(path)}",
+            label=f"storage sign {bucket}",
+            json={"expiresIn": expires_in},
+        )
+        signed = response.json().get("signedURL") or response.json().get("signedUrl")
+        if not signed:
+            raise UpstreamServiceError()
+        return f"{self._storage_url}{signed}" if signed.startswith("/") else signed
 
     async def remove_objects(self, bucket: str, paths: list[str]) -> None:
         await self._send(

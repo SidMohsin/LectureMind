@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import PageContainer from "../../components/layout/PageContainer";
 import Button from "../../components/ui/Button";
@@ -6,26 +6,108 @@ import EmptyState from "../../components/ui/EmptyState";
 import ErrorState from "../../components/ui/ErrorState";
 import FullPageLoader from "../../components/feedback/FullPageLoader";
 import { useToast } from "../../components/ui/Toast";
-import { TrashIcon } from "../../components/ui/icons";
+import { ExternalIcon, TrashIcon } from "../../components/ui/icons";
 import { SourceBadge, StatusBadge } from "../../components/lectures/LectureBadges";
 import DeleteLectureDialog from "../../components/lectures/DeleteLectureDialog";
 import { useAsyncData } from "../../hooks/useAsyncData";
-import { getLecture } from "../../services/lectures";
+import { getWorkspace } from "../../services/workspace";
 import { statusInfo } from "../../lectures/lectureStatus";
 import { formatDate, formatDuration } from "../../utils/format";
+import { findChapterIndex, formatClock } from "../../workspace/timeline";
+import MediaPlayer from "./MediaPlayer";
+import TranscriptPanel from "./TranscriptPanel";
+import IntelligencePanel from "./IntelligencePanel";
+import QuestionPanel from "./QuestionPanel";
 import "./Workspace.css";
+
+function WorkspaceHeader({ lecture, onDelete }) {
+  const meta = [
+    lecture.instructor,
+    lecture.lecture_date && `Recorded ${formatDate(lecture.lecture_date)}`,
+    formatDuration(lecture.duration_seconds) && `${formatDuration(lecture.duration_seconds)} total`,
+  ].filter(Boolean);
+  return (
+    <header className="workspace-header">
+      <div className="workspace-header__main">
+        <div className="workspace-header__badges">
+          <StatusBadge status={lecture.status} job={lecture.job} />
+          <SourceBadge sourceType={lecture.source_type} />
+          {lecture.subject && (
+            <span className="workspace-header__subject mono">{[lecture.subject, lecture.topic].filter(Boolean).join(" · ")}</span>
+          )}
+        </div>
+        <h1 className="workspace-header__title">{lecture.title}</h1>
+        {meta.length > 0 && (
+          <p className="workspace-header__meta">
+            {meta.map((part) => (
+              <span key={part}>{part}</span>
+            ))}
+          </p>
+        )}
+      </div>
+      <div className="workspace-header__actions">
+        {lecture.source_type === "url" && lecture.source_url && (
+          <Button as="a" variant="secondary" href={lecture.source_url} target="_blank" rel="noopener noreferrer">
+            <ExternalIcon size={15} />
+            Original source
+          </Button>
+        )}
+        <Button as={Link} variant="secondary" to={`/lectures/${lecture.id}/processing`}>
+          Processing details
+        </Button>
+        <Button variant="secondary" onClick={onDelete}>
+          <TrashIcon size={15} />
+          Delete
+        </Button>
+      </div>
+    </header>
+  );
+}
+
+/** Compact chapter navigation under the player on small screens. */
+function ChapterStrip({ chapters, currentTime, onSeek }) {
+  if (!chapters.length) return null;
+  const active = findChapterIndex(chapters, currentTime);
+  return (
+    <nav className="chapter-strip" aria-label="Chapters">
+      <ol>
+        {chapters.map((chapter, index) => (
+          <li key={chapter.sequence}>
+            <button
+              type="button"
+              className={index === active ? "is-active" : ""}
+              aria-current={index === active ? "true" : undefined}
+              aria-label={`${chapter.title}, from ${formatClock(chapter.start_seconds)}`}
+              onClick={() => onSeek(chapter.start_seconds)}
+            >
+              <span className="mono">{formatClock(chapter.start_seconds)}</span>
+              {chapter.title}
+            </button>
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
+}
 
 export default function Workspace() {
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const lecture = useAsyncData((options) => getLecture(id, options), [id]);
+  const [currentTime, setCurrentTime] = useState(0);
+  const playerRef = useRef(null);
+  const workspace = useAsyncData((options) => getWorkspace(id, options), [id]);
 
-  if (lecture.status === "loading" && !lecture.data) return <FullPageLoader label="Loading lecture…" />;
+  const seek = useCallback((seconds) => {
+    setCurrentTime(seconds);
+    playerRef.current?.seek(seconds, { play: true });
+  }, []);
 
-  if (lecture.status === "error") {
-    const missing = lecture.error.status === 404 || lecture.error.status === 422;
+  if (workspace.status === "loading" && !workspace.data) return <FullPageLoader label="Loading lecture…" />;
+
+  if (workspace.status === "error") {
+    const missing = workspace.error.status === 404 || workspace.error.status === 422;
     return (
       <PageContainer>
         {missing ? (
@@ -39,63 +121,68 @@ export default function Workspace() {
             }
           />
         ) : (
-          <ErrorState title="We couldn't load this lecture." error={lecture.error} onRetry={lecture.reload} />
+          <ErrorState title="We couldn't load this lecture." error={workspace.error} onRetry={workspace.reload} />
         )}
       </PageContainer>
     );
   }
 
-  const data = lecture.data;
-  const ready = statusInfo(data.status).group === "ready";
-  const meta = [
-    data.instructor,
-    data.lecture_date && `Recorded ${formatDate(data.lecture_date)}`,
-    formatDuration(data.duration_seconds) && `${formatDuration(data.duration_seconds)} total`,
-  ].filter(Boolean);
+  const { lecture, transcript, chapters, intelligence, chunks } = workspace.data;
+  const ready = statusInfo(lecture.status).group === "ready";
 
   return (
-    <PageContainer>
-      <header className="workspace-header">
-        <div className="workspace-header__main">
-          <div className="workspace-header__badges">
-            <StatusBadge status={data.status} />
-            <SourceBadge sourceType={data.source_type} />
-            {data.subject && <span className="workspace-header__subject mono">{[data.subject, data.topic].filter(Boolean).join(" · ")}</span>}
-          </div>
-          <h1 className="workspace-header__title">{data.title}</h1>
-          {meta.length > 0 && (
-            <p className="workspace-header__meta">
-              {meta.map((part) => (
-                <span key={part}>{part}</span>
-              ))}
-            </p>
-          )}
-        </div>
-        <Button variant="secondary" onClick={() => setConfirmDelete(true)}>
-          <TrashIcon size={15} />
-          Delete
-        </Button>
-      </header>
+    <PageContainer className="workspace-page">
+      <WorkspaceHeader lecture={lecture} onDelete={() => setConfirmDelete(true)} />
 
-      <EmptyState
-        title={ready ? "The lecture workspace is coming next" : "This lecture is still being processed"}
-        description={
-          ready
-            ? "The media player, synchronized transcript, lecture intelligence and grounded Q&A for this lecture are the next part of LectureMind being built."
-            : "Once processing finishes, this is where you'll study the lecture."
-        }
-        action={
-          !ready && (
-            <Button as={Link} to={`/lectures/${data.id}/processing`} variant="secondary">
+      {!ready ? (
+        <EmptyState
+          title="This lecture is still being processed"
+          description="Once processing finishes, this is where you'll study the lecture: player, synchronized transcript, lecture intelligence and questions."
+          action={
+            <Button as={Link} to={`/lectures/${lecture.id}/processing`} variant="secondary">
               View Processing Details
             </Button>
-          )
-        }
-      />
+          }
+        />
+      ) : (
+        <div className="workspace-layout">
+          <div className="workspace-main">
+            <div className="workspace-area workspace-area--player">
+              <MediaPlayer
+                ref={playerRef}
+                lectureId={lecture.id}
+                chapters={chapters}
+                fallbackDuration={lecture.duration_seconds}
+                onTimeUpdate={setCurrentTime}
+              />
+            </div>
+            <div className="workspace-area workspace-area--chapters">
+              <ChapterStrip chapters={chapters} currentTime={currentTime} onSeek={seek} />
+            </div>
+            <div className="workspace-area workspace-area--transcript">
+              <TranscriptPanel transcript={transcript} currentTime={currentTime} onSeek={seek} />
+            </div>
+          </div>
+          <div className="workspace-side">
+            <div className="workspace-area workspace-area--qa">
+              <QuestionPanel lectureId={lecture.id} onSeek={seek} />
+            </div>
+            <div className="workspace-area workspace-area--intel">
+              <IntelligencePanel
+                intelligence={intelligence}
+                chapters={chapters}
+                chunks={chunks}
+                currentTime={currentTime}
+                onSeek={seek}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {confirmDelete && (
         <DeleteLectureDialog
-          lecture={data}
+          lecture={lecture}
           onClose={() => setConfirmDelete(false)}
           onDeleted={(deleted) => {
             toast.show(`"${deleted.title}" was deleted.`);

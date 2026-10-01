@@ -8,7 +8,7 @@ timestamps.
 Full product/technical source of truth: the PRD, Architecture, Design, Roadmap, Memory
 and Testing documents supplied with this project.
 
-## Current status: Phase 5 — Lecture Intelligence
+## Current status: Phase 6 — Lecture Workspace + Grounded Q&A
 
 Implemented so far:
 
@@ -28,10 +28,15 @@ Implemented so far:
   (summary, chapters, topics, key concepts, definitions, keywords, important points,
   examples) from an LLM behind a provider interface. Every pipeline stage is implemented,
   so lectures now reach READY.
+- **Phase 6:** the Lecture Workspace: private media playback (signed URLs, HTTP range),
+  a transcript synchronized with playback (click-to-seek, find, follow playback),
+  chapters and the stored lecture intelligence with clickable timestamps, and grounded
+  lecture-specific Q&A (query embedding → pgvector retrieval → evidence threshold →
+  bounded context → LLM → cited sources) with persisted question history.
 
-Not implemented yet (Phase 6+): the lecture workspace UI for transcripts and notes,
-grounded Q&A / chat, a query endpoint, search, question history, deployment and evaluation.
-The retrieval function exists and is tested, but nothing user-facing calls it yet.
+Not implemented yet (Phase 7+): global search, the standalone Question History page,
+rate limiting and other hardening, deployment, and the formal evaluation (retrieval,
+QA and summary metrics). No research metrics are reported yet.
 
 ## Project structure
 
@@ -127,6 +132,10 @@ runs in the worker. Run more worker processes to process more lectures in parall
 | `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` | Any OpenAI-compatible Chat Completions API (OpenAI, Groq, Gemini's OpenAI endpoint, Ollama). **Server-only.** |
 | `LLM_WINDOW_TOKENS`, `LLM_MAX_OUTPUT_TOKENS` | Transcript per request and response cap. Lower both on providers with small per-minute token limits. |
 | `LLM_TEMPERATURE`, `LLM_TIMEOUT_SECONDS`, `LLM_RATE_LIMIT_RETRIES`, `LLM_REASONING_EFFORT` | Generation settings; `LLM_REASONING_EFFORT=low` for reasoning models such as `gpt-oss`. |
+| `RAG_TOP_K`, `RAG_MIN_SIMILARITY` | Chunks retrieved per question (6) and the minimum cosine similarity for a chunk to count as evidence (0.6). |
+| `RAG_CONTEXT_TOKENS`, `RAG_MAX_OUTPUT_TOKENS`, `RAG_RATE_LIMIT_RETRIES` | Evidence budget per question, answer cap, and how many provider rate limits a question waits out. |
+| `PLAYBACK_AUDIO_BITRATE_KBPS`, `PLAYBACK_MIN_BITRATE_KBPS`, `PLAYBACK_MAX_BYTES` | Private playback audio for URL lectures (48 kbps AAC, lowered to fit 48 MB). |
+| `MEDIA_URL_TTL_SECONDS` | Lifetime of signed media URLs given to the player (1 hour; the player renews an expired one). |
 
 ### Endpoints
 
@@ -140,6 +149,10 @@ runs in the worker. Run more worker processes to process more lectures in parall
 | `POST /lectures/sources` | YouTube URL + metadata + rights confirmation. |
 | `POST /lectures/{id}/retry` | Re-queue a failed, retryable job. |
 | `GET /lectures/{id}/processing` | Job, per-stage runs with timings, and stored media facts. |
+| `GET /lectures/{id}/workspace` | Transcript segments, chapters, lecture intelligence and chunk times (one call). |
+| `GET /lectures/{id}/media` | A short-lived signed URL for the lecture's private media. |
+| `POST /lectures/{id}/questions` | Ask a question about this lecture: grounded answer + sources, or insufficient evidence. |
+| `GET /lectures/{id}/questions` | This lecture's question history for the caller, newest first. |
 
 ### Tests
 
@@ -147,6 +160,7 @@ runs in the worker. Run more worker processes to process more lectures in parall
 pytest                   # offline: API, lifecycle, pipeline, worker (real FFmpeg), queue
 pytest -m integration    # live: Supabase auth/RLS/storage, ingestion + worker, pgvector retrieval, Redis
 pytest -m models         # real faster-whisper + fastembed models (downloads them on first run)
+pytest -m llm            # grounded Q&A + prompt-injection checks with the real configured LLM
 ```
 
 Stop any running worker before `pytest -m integration`: a live worker on the same Redis
@@ -165,6 +179,7 @@ Upload / YouTube URL
   → worker claims the job with a lease (database time), heartbeats while running
   → EXTRACTING_AUDIO: download to a private temp dir → ffprobe validation
     → FFmpeg → 16 kHz mono FLAC in the job's temp workspace (never uploaded)
+    → URL lectures only: a private mono AAC playback file, processed/playback.m4a
   → TRANSCRIBING: faster-whisper with voice-activity filtering → timestamped segments
   → CLEANING: whitespace/punctuation fixes, removes non-speech and repeated segments;
     never adds words or changes timestamps (the raw text is kept alongside)
@@ -199,10 +214,43 @@ counts and dropped items are stored with the results for evaluation.
   times, duration, error code and measured details (input size and duration, FFmpeg time),
   and jobs record queued/started/finished/failed times and attempt counts. This supports
   later latency and reliability evaluation.
+- **Playback media:** uploads play from their stored original. URL lectures have no upload,
+  so the worker stores one compact private playback file (48 kbps AAC, about 22 MB per
+  hour). For lectures processed before this existed, run
+  `python -m app.workers.playback <lecture-id>`.
 - **YouTube:** only single-video YouTube links are accepted. Availability is checked with
   YouTube's official oEmbed endpoint before a lecture is created. Audio is fetched with
   `yt-dlp`, audio only, anonymously, and with no attempt to bypass sign-in, age, region or
   DRM restrictions. Users must confirm they have the right to use the video.
+
+## Grounded Q&A
+
+```text
+question (validated, 3-500 chars) → lecture ownership + READY + same embedding model as the index
+  → query embedding (fastembed, bge-small-en-v1.5, 384-dim, in a worker thread)
+  → match_lecture_chunks as the user (this lecture only; RLS applies)
+  → keep chunks with similarity ≥ RAG_MIN_SIMILARITY, within RAG_CONTEXT_TOKENS
+      none left → "I couldn't find enough information in this lecture to answer that
+                  reliably." (no LLM call)
+  → LLM with numbered, timestamped passages in <evidence>, marked as untrusted data
+  → JSON {answerable, answer, citations}; citations must name retrieved passages,
+    otherwise the answer is discarded as insufficient evidence
+  → answer + cited sources (chunk, timestamps, passage text) → chat_logs
+```
+
+- **Threshold.** Measured on the CS229 lecture (12 questions the lecture covers, 12 it
+  doesn't), top-chunk similarity was 0.665–0.803 for covered questions and 0.383–0.663 for
+  the others. The ranges almost meet, so 0.6 is a first filter that turns away clearly
+  unrelated questions without an LLM call. Borderline questions (for example related ML
+  topics the lecture doesn't teach) are declined by the model. This is a calibration
+  note, not an evaluation result.
+- **What is stored.** Every answered or declined question is stored with the answer,
+  every candidate chunk and its similarity, the chunks used and cited, the
+  threshold/top-k/budget, the embedding model, LLM provider/model, prompt version, and
+  retrieval, LLM and total latency. This is enough to compute retrieval and answer metrics
+  later. Provider errors are not stored, because nothing was answered.
+- Retrieval reduces unsupported answers; it doesn't eliminate them. The model can still
+  misread a cited passage.
 
 ## Security model
 
@@ -223,6 +271,14 @@ counts and dropped items are stored with the results for evaluation.
 - Transcripts, chunks, embeddings, chapters and intelligence are readable only by the
   lecture's owner (RLS) and writable only by the service role. `match_lecture_chunks`
   runs with the caller's rights (SECURITY INVOKER), so retrieval can't cross users.
+- Workspace, media and question endpoints load the lecture with the caller's token and id
+  first. Another user's lecture is a 404, and nothing else is read. Media is reachable
+  only through short-lived signed URLs that storage policies let only the owner create.
+- `chat_logs` is readable only by its owner (for lectures they still own) and written only
+  by the server after the ownership check; clients can't insert, edit or delete history.
+- Retrieved transcript text and the question are data in separate prompt sections.
+  Angle brackets are neutralized so they can't close or open a section, and sources
+  come from the application's own retrieval, never from model output.
 
 ## Known limitations
 
@@ -240,6 +296,10 @@ counts and dropped items are stored with the results for evaluation.
   can reach the output cap. The notes stay valid and grounded but may be shorter, and this
   is recorded as `finish_reason: length` in `lecture_intelligence.generation`. A paid tier
   or a larger cap removes it.
+- Q&A waits out at most one provider rate limit (`RAG_RATE_LIMIT_RETRIES`) and otherwise
+  returns a retryable "answer couldn't be generated" error. There's no per-user rate limit
+  on questions yet (Phase 7 hardening).
+- The first question after the API starts loads the embedding model (about a second).
 
 ## Tech stack
 

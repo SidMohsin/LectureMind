@@ -18,6 +18,7 @@ class AudioArtifact:
     details: dict
     input_probe: ProbeResult
     original_media: dict | None  # the stored original's lecture_media row (None for source URLs)
+    source_path: Path | None = None  # the acquired source, when kept for further use in this stage
 
 
 @dataclass

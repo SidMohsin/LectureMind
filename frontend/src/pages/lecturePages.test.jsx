@@ -23,7 +23,6 @@ vi.mock("../services/ingestion", () => ingestion);
 const { default: Library } = await import("./Library");
 const { default: Dashboard } = await import("./Dashboard");
 const { default: Upload } = await import("./Upload");
-const { default: Workspace } = await import("./Workspace");
 const { default: Processing } = await import("./Processing");
 
 const lecture = (overrides = {}) => ({
@@ -58,7 +57,6 @@ function renderAt(path) {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/library" element={<Library />} />
           <Route path="/lectures/new" element={<Upload />} />
-          <Route path="/lectures/:id" element={<Workspace />} />
           <Route path="/lectures/:id/processing" element={<Processing />} />
           <Route path="*" element={null} />
         </Routes>
@@ -534,18 +532,3 @@ describe("Library processing states", () => {
   });
 });
 
-describe("Lecture route", () => {
-  it("shows not-found for a lecture that isn't the user's", async () => {
-    lectures.getLecture.mockRejectedValue(Object.assign(new Error("Lecture not found."), { status: 404 }));
-    renderAt("/lectures/5b3d0c3e-0000-4000-8000-000000000000");
-    expect(await screen.findByText("Lecture not found")).toBeTruthy();
-  });
-
-  it("shows the real lecture header and an honest workspace state", async () => {
-    lectures.getLecture.mockResolvedValue(lecture());
-    renderAt("/lectures/abc");
-    expect(await screen.findByRole("heading", { name: "Convex Optimization & Duality" })).toBeTruthy();
-    expect(screen.getByText("The lecture workspace is coming next")).toBeTruthy();
-    expect(screen.queryByText(/transcript/i, { selector: "button" })).toBeNull();
-  });
-});

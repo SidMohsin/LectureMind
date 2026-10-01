@@ -93,6 +93,25 @@ class Settings(BaseSettings):
     # For reasoning models (e.g. gpt-oss, o-series): "low" | "medium" | "high". Empty = not sent.
     llm_reasoning_effort: str = ""
 
+    # --- Lecture workspace + grounded Q&A (Phase 6) ---
+    # Private playback audio stored for lectures whose source isn't an upload (e.g. YouTube).
+    # The bitrate is lowered (not below the minimum) so the file fits playback_max_bytes,
+    # which must not exceed the storage plan's per-file limit (50 MB on Supabase Free).
+    playback_audio_bitrate_kbps: int = 48
+    playback_min_bitrate_kbps: int = 24
+    playback_max_bytes: int = 48 * 1024**2
+    # How long a signed media URL handed to the player stays valid.
+    media_url_ttl_seconds: int = 3600
+    # Retrieval: candidates fetched per question, and the minimum cosine similarity a
+    # chunk needs to count as evidence (calibrated for bge-small-en-v1.5; see README).
+    rag_top_k: int = 6
+    rag_min_similarity: float = 0.6
+    # Evidence passed to the LLM per question (estimated tokens) and its answer cap.
+    rag_context_tokens: int = 2400
+    rag_max_output_tokens: int = 900
+    # Interactive requests shouldn't sit out long provider rate limits.
+    rag_rate_limit_retries: int = 1
+
     @field_validator("redis_url", mode="after")
     @classmethod
     def _redis_default(cls, value: str) -> str:
