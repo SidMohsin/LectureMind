@@ -12,6 +12,7 @@ from starlette.datastructures import UploadFile
 from app.api.deps import get_current_user, get_user_db
 from app.core.config import Settings, get_settings
 from app.core.errors import AppError
+from app.core.rate_limit import rate_limited
 from app.core.security import AuthenticatedUser
 from app.repositories import lectures as lecture_repo
 from app.schemas.ingestion import (
@@ -110,7 +111,12 @@ async def ingestion_limits(
     )
 
 
-@router.post("/lectures/uploads", response_model=IngestionResult, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/lectures/uploads",
+    response_model=IngestionResult,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(rate_limited("uploads", "rate_limit_uploads"))],
+)
 async def upload_lecture(
     request: Request,
     response: Response,
@@ -201,7 +207,12 @@ async def upload_lecture(
     return result
 
 
-@router.post("/lectures/sources", response_model=IngestionResult, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/lectures/sources",
+    response_model=IngestionResult,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(rate_limited("sources", "rate_limit_sources"))],
+)
 async def submit_source(
     body: SourceSubmission,
     request: Request,

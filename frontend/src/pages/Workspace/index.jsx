@@ -1,12 +1,12 @@
-import { useCallback, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import PageContainer from "../../components/layout/PageContainer";
 import Button from "../../components/ui/Button";
 import EmptyState from "../../components/ui/EmptyState";
 import ErrorState from "../../components/ui/ErrorState";
 import FullPageLoader from "../../components/feedback/FullPageLoader";
 import { useToast } from "../../components/ui/Toast";
-import { ExternalIcon, TrashIcon } from "../../components/ui/icons";
+import { CloseIcon, ExternalIcon, PlayIcon, TrashIcon } from "../../components/ui/icons";
 import { SourceBadge, StatusBadge } from "../../components/lectures/LectureBadges";
 import DeleteLectureDialog from "../../components/lectures/DeleteLectureDialog";
 import { useAsyncData } from "../../hooks/useAsyncData";
@@ -90,8 +90,44 @@ function ChapterStrip({ chapters, currentTime, onSeek }) {
   );
 }
 
+/** Where the user came from (search result or question history) and the position it points to. */
+function ContextBar({ origin, seconds, onPlay, onDismiss }) {
+  const label = origin === "history" ? "Opened from your question history" : "Opened from search";
+  return (
+    <div className="workspace-context" role="status">
+      <p>
+        {label}
+        {seconds !== null && (
+          <>
+            {" "}
+            — passage at <span className="mono">{formatClock(seconds)}</span>
+          </>
+        )}
+      </p>
+      {seconds !== null && (
+        <button type="button" className="workspace-context__play" onClick={onPlay}>
+          <PlayIcon size={12} /> Play from {formatClock(seconds)}
+        </button>
+      )}
+      <button type="button" className="workspace-context__dismiss" onClick={onDismiss} aria-label="Dismiss">
+        <CloseIcon size={14} />
+      </button>
+    </div>
+  );
+}
+
+function readSeconds(value) {
+  const seconds = Number.parseFloat(value ?? "");
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
+}
+
 export default function Workspace() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const startAt = readSeconds(searchParams.get("t"));
+  const focusQuestion = searchParams.get("question");
+  const origin = searchParams.get("from");
+  const [showContext, setShowContext] = useState(Boolean(origin));
   const navigate = useNavigate();
   const toast = useToast();
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -103,6 +139,14 @@ export default function Workspace() {
     setCurrentTime(seconds);
     playerRef.current?.seek(seconds, { play: true });
   }, []);
+
+  // Opened at a position (from a search result or a history source): show it there without autoplay.
+  const isReady = workspace.data && statusInfo(workspace.data.lecture.status).group === "ready";
+  useEffect(() => {
+    if (!isReady || startAt === null) return;
+    setCurrentTime(startAt);
+    playerRef.current?.seek(startAt);
+  }, [isReady, startAt]);
 
   if (workspace.status === "loading" && !workspace.data) return <FullPageLoader label="Loading lecture…" />;
 
@@ -145,6 +189,15 @@ export default function Workspace() {
           }
         />
       ) : (
+        <>
+        {showContext && (origin === "search" || origin === "history") && (
+          <ContextBar
+            origin={origin}
+            seconds={startAt}
+            onPlay={() => playerRef.current?.seek(startAt, { play: true })}
+            onDismiss={() => setShowContext(false)}
+          />
+        )}
         <div className="workspace-layout">
           <div className="workspace-main">
             <div className="workspace-area workspace-area--player">
@@ -165,7 +218,7 @@ export default function Workspace() {
           </div>
           <div className="workspace-side">
             <div className="workspace-area workspace-area--qa">
-              <QuestionPanel lectureId={lecture.id} onSeek={seek} />
+              <QuestionPanel lectureId={lecture.id} onSeek={seek} focusQuestionId={focusQuestion} />
             </div>
             <div className="workspace-area workspace-area--intel">
               <IntelligencePanel
@@ -178,6 +231,7 @@ export default function Workspace() {
             </div>
           </div>
         </div>
+        </>
       )}
 
       {confirmDelete && (

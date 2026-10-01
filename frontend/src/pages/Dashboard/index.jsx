@@ -52,7 +52,7 @@ export default function Dashboard() {
   function handleSearch(event) {
     event.preventDefault();
     const query = search.trim();
-    navigate(query ? `/library?q=${encodeURIComponent(query)}` : "/library");
+    navigate(query ? `/search?q=${encodeURIComponent(query)}` : "/search");
   }
 
   function reloadAll() {
@@ -80,7 +80,7 @@ export default function Dashboard() {
             <form className="dashboard-search" role="search" onSubmit={handleSearch}>
               <SearchIcon size={17} />
               <label htmlFor="dashboard-search" className="visually-hidden">
-                Search your library
+                Search your lectures
               </label>
               <input
                 id="dashboard-search"

@@ -8,7 +8,7 @@ timestamps.
 Full product/technical source of truth: the PRD, Architecture, Design, Roadmap, Memory
 and Testing documents supplied with this project.
 
-## Current status: Phase 6 — Lecture Workspace + Grounded Q&A
+## Current status: Phase 7B — Hardening + Evaluation Foundation
 
 Implemented so far:
 
@@ -33,10 +33,18 @@ Implemented so far:
   chapters and the stored lecture intelligence with clickable timestamps, and grounded
   lecture-specific Q&A (query embedding → pgvector retrieval → evidence threshold →
   bounded context → LLM → cited sources) with persisted question history.
+- **Phase 7A:** Search: lecture metadata search, plus semantic search for passages across
+  the user's own lectures, opening the lecture at the passage's timestamp. The Question
+  History page: search, filter by lecture, order, paging, opening an answer back in its
+  lecture at its source, and deleting questions (one, or all for a lecture).
+- **Phase 7B:** per-user rate limits, security headers, safe logging with request ids,
+  readiness checks, worker presence, stuck-job detection and a cap on re-running crashed
+  jobs, an orphaned-media cleanup tool, a cross-user permission regression suite, and the
+  offline research-evaluation framework (`backend/evaluation/`).
 
-Not implemented yet (Phase 7+): global search, the standalone Question History page,
-rate limiting and other hardening, deployment, and the formal evaluation (retrieval,
-QA and summary metrics). No research metrics are reported yet.
+Not implemented yet: production deployment, and the formal evaluation itself. The
+framework exists, but no evaluation dataset has been built or run, so **no research
+metrics (WER, retrieval, answer correctness, citation support, abstention) are reported.**
 
 ## Project structure
 
@@ -119,7 +127,7 @@ runs in the worker. Run more worker processes to process more lectures in parall
 | `SUPABASE_SERVICE_ROLE_KEY` | **Server-only.** Ingestion writes after ownership is verified, and the worker. Never in a `VITE_` variable. |
 | `SUPABASE_JWT_SECRET` | Only for projects still on the legacy HS256 JWT secret. |
 | `CORS_ALLOW_ORIGINS` | Comma-separated frontend origins. |
-| `REDIS_URL` | Queue server (default `redis://localhost:6379/0`). |
+| `REDIS_URL` | Queue server (default `redis://127.0.0.1:6379/0`). |
 | `WORK_DIR` | Scratch space for per-job files (default: system temp). |
 | `FFMPEG_PATH`, `FFPROBE_PATH` | Binaries (default: from `PATH`). |
 | `MAX_VIDEO_BYTES`, `MAX_AUDIO_BYTES`, `MAX_MEDIA_DURATION_SECONDS` | Authoritative ingestion limits. |
@@ -134,6 +142,7 @@ runs in the worker. Run more worker processes to process more lectures in parall
 | `LLM_TEMPERATURE`, `LLM_TIMEOUT_SECONDS`, `LLM_RATE_LIMIT_RETRIES`, `LLM_REASONING_EFFORT` | Generation settings; `LLM_REASONING_EFFORT=low` for reasoning models such as `gpt-oss`. |
 | `RAG_TOP_K`, `RAG_MIN_SIMILARITY` | Chunks retrieved per question (6) and the minimum cosine similarity for a chunk to count as evidence (0.6). |
 | `RAG_CONTEXT_TOKENS`, `RAG_MAX_OUTPUT_TOKENS`, `RAG_RATE_LIMIT_RETRIES` | Evidence budget per question, answer cap, and how many provider rate limits a question waits out. |
+| `SEARCH_CANDIDATES`, `SEARCH_MIN_SIMILARITY`, `SEARCH_MAX_PER_LECTURE` | Semantic search: candidates ranked in the database (40), minimum cosine similarity to show a passage (0.6), and passages per lecture (3). |
 | `PLAYBACK_AUDIO_BITRATE_KBPS`, `PLAYBACK_MIN_BITRATE_KBPS`, `PLAYBACK_MAX_BYTES` | Private playback audio for URL lectures (48 kbps AAC, lowered to fit 48 MB). |
 | `MEDIA_URL_TTL_SECONDS` | Lifetime of signed media URLs given to the player (1 hour; the player renews an expired one). |
 
@@ -153,6 +162,10 @@ runs in the worker. Run more worker processes to process more lectures in parall
 | `GET /lectures/{id}/media` | A short-lived signed URL for the lecture's private media. |
 | `POST /lectures/{id}/questions` | Ask a question about this lecture: grounded answer + sources, or insufficient evidence. |
 | `GET /lectures/{id}/questions` | This lecture's question history for the caller, newest first. |
+| `DELETE /lectures/{id}/questions` | Delete all of the caller's questions about one lecture. |
+| `GET /search/content?q=` | Semantic search: passages from the caller's ready lectures, with lecture and timestamps. Metadata search is `GET /lectures?q=`. |
+| `GET /questions` | The caller's question history across lectures (`q`, `lecture_id`, `order`, `limit`, `offset`). |
+| `DELETE /questions/{id}` | Delete one of the caller's questions. |
 
 ### Tests
 
@@ -252,6 +265,28 @@ question (validated, 3-500 chars) → lecture ownership + READY + same embedding
 - Retrieval reduces unsupported answers; it doesn't eliminate them. The model can still
   misread a cited passage.
 
+## Search and history
+
+- **Metadata search** is the lecture list's `q` filter: case-insensitive matching of title,
+  subject, topic, instructor and tags in Postgres. It's always limited to the caller's lectures.
+- **Semantic search** embeds the query with the same model as the lecture chunks (no LLM)
+  and calls `search_lecture_content` as the user. That database function ranks only the
+  caller's READY lectures' chunks made with the same embedding model, exactly by cosine
+  distance, so other users' vectors are never scanned. Results keep a similarity of at
+  least `SEARCH_MIN_SIMILARITY`, at most `SEARCH_MAX_PER_LECTURE` per lecture. Each one shows
+  the lecture, the chunk's own start and end time, and the passage. Opening a result goes
+  to `/lectures/{id}?t=…`, which positions the player and transcript there without
+  autoplay. Measured on two CS229 lectures (148 chunks), a content search takes about
+  0.3 s and a metadata search about 0.1 s. The first content search after the API starts
+  also loads the embedding model.
+- **History** comes from `chat_logs`: every question with its answer or
+  insufficient-evidence outcome, its cited passages and timestamps, and its lecture.
+  "Open in lecture" goes to `/lectures/{id}?question=…&t=…`, which reopens that answer at
+  its first source.
+- **Deleting a lecture** deletes its question history in the database (foreign-key
+  cascade), not just hides it; other history is unaffected. Deleting questions only removes
+  the caller's own rows, after an ownership check on the server.
+
 ## Security model
 
 - Supabase Auth is the only identity provider. The backend verifies every token (signature
@@ -275,10 +310,88 @@ question (validated, 3-500 chars) → lecture ownership + READY + same embedding
   first. Another user's lecture is a 404, and nothing else is read. Media is reachable
   only through short-lived signed URLs that storage policies let only the owner create.
 - `chat_logs` is readable only by its owner (for lectures they still own) and written only
-  by the server after the ownership check; clients can't insert, edit or delete history.
+  by the server after the ownership check; clients can't insert, edit or delete history
+  directly. Question deletes go through the API, which checks ownership first.
+- Search and history take the user only from the verified token. Changing a lecture or
+  question id in a request returns nothing or a 404, never another user's data.
 - Retrieved transcript text and the question are data in separate prompt sections.
   Angle brackets are neutralized so they can't close or open a section, and sources
   come from the application's own retrieval, never from model output.
+
+## Operations
+
+- **Health:** `GET /health` is liveness (no dependencies). `GET /health/ready` checks the
+  database (503 if unreachable) and reports Redis and live workers (`degraded` if either is
+  missing; uploads still work and the database sweep catches up). It returns only booleans
+  and counts.
+- **Rate limits** (per user, fixed window in Redis, `RATE_LIMIT_*`): questions 20 per 5 min,
+  passage search 60 per min, uploads and YouTube ingestion 10 per hour each. Over the limit
+  the API returns 429 with `Retry-After`. If Redis is down, requests are allowed and a
+  warning is logged.
+- **Logs:** one line per request with a correlation id (`X-Request-ID`, echoed in responses),
+  method, route template, status and duration. Worker lines carry the job id, with
+  `stage_finished ... duration_ms=... error_code=...` for every stage. Query strings, request
+  bodies, tokens and lecture or question text are never logged. Supabase error bodies are
+  reduced to their code and message, because PostgREST puts failing row contents in
+  `details`. `LOG_FORMAT=json` emits JSON lines.
+- **Workers:** each worker refreshes a presence key in Redis, which expires after
+  `WORKER_PRESENCE_TTL_SECONDS`. The recovery sweep logs `stuck_job` warnings for jobs due
+  but not started for `STUCK_QUEUED_SECONDS`, or running longer than `STUCK_RUNNING_SECONDS`.
+  A job whose worker dies after it has used all its attempts is now failed (retryable by
+  its owner) instead of being re-queued forever. Stale job workspaces are removed at
+  start-up and periodically.
+- **Orphaned media:** `python -m app.workers.maintenance orphans` lists stored objects whose
+  lecture no longer exists, or that no media row references, and that are older than 24 h.
+  It is a dry run unless `--apply` is given.
+- **Redis in deployment:** Redis must not be reachable from the internet. Bind it to a
+  private interface or localhost, require a password (`requirepass`, or ACLs on Redis 6+)
+  and put it in `REDIS_URL` (`redis://:password@host:6379/0`); use TLS (`rediss://`) across
+  networks. The Windows development service listens on all interfaces without a password
+  until reconfigured (see Known limitations).
+- **Backups (not configured):** this project has **no verified backup**. Supabase's
+  automatic backups depend on the plan; check *Database → Backups* in the dashboard rather
+  than assuming they exist. Manual procedure:
+  `npx supabase db dump -f schema.sql`, `npx supabase db dump --data-only -f data.sql`
+  (add `--role-only` for roles). Storage objects (lecture media) are *not* included and must
+  be copied separately. Restore into a scratch project with `psql` to test the dump before
+  relying on it.
+
+## Research evaluation (`backend/evaluation/`)
+
+Offline tooling for the thesis. It reuses the production retrieval and answer code
+(`app.services.rag`), and writes runs to `backend/evaluation/runs/` (git-ignored), never
+to production tables. Usage: `python -m evaluation.cli --help` from `backend/`.
+
+- **Datasets** (`evaluation/dataset.py`, format in `evaluation/examples/example_dataset.json`,
+  which is clearly marked EXAMPLE):
+  - human-written questions, answerable (with gold spans and a reference answer) or
+    deliberately unanswerable, with annotation provenance and agreement fields;
+  - `split` is calibration, dev or test. Test data runs only when frozen, and parameter
+    sweeps are refused on it, so threshold tuning can't leak into the test set;
+  - the earlier 24-question threshold calibration was ad hoc and is not part of any dataset.
+- **Separation:** evaluation lectures must belong to the `EVAL_USER_ID` account, be READY
+  and be embedded with the configured model; anything else is refused.
+- **Runs record:**
+  - git commit and dirty flag, dataset id, version and content hash;
+  - retrieval settings and abstention stages, with whitelisted `--set` overrides;
+  - embedding model, generator model, temperature and prompt hash;
+  - the ASR and chunking configuration each lecture was actually processed with;
+  - a config hash.
+  `rerun-check` repeats retrieval and reports any difference.
+- **Metrics:**
+  - Hit@K, Recall@K, MRR and timestamp hit against gold spans (±30 s default tolerance);
+  - WER and CER with a fixed, versioned normalizer;
+  - abstention precision and recall, false-refusal rate;
+  - citation coverage, kept separate from human-labelled citation support (full / partial / none);
+  - answer correctness from human labels, with an optional secondary LLM judge that must
+    differ from the generator; reported separately;
+  - Cohen's kappa;
+  - latency summaries.
+  `timings` exports stored stage and Q&A timings (numbers only).
+- **Literature comparison:** `evaluation/literature/comparison.json` records each paper's
+  published results unchanged, with a comparability label (directly comparable,
+  limited/conditional, not directly comparable) and the reason. LectureMind fields stay
+  empty until measured.
 
 ## Known limitations
 
@@ -297,8 +410,15 @@ question (validated, 3-500 chars) → lecture ownership + READY + same embedding
   is recorded as `finish_reason: length` in `lecture_intelligence.generation`. A paid tier
   or a larger cap removes it.
 - Q&A waits out at most one provider rate limit (`RAG_RATE_LIMIT_RETRIES`) and otherwise
-  returns a retryable "answer couldn't be generated" error. There's no per-user rate limit
-  on questions yet (Phase 7 hardening).
+  returns a retryable "answer couldn't be generated" error.
+- Rate limits are per user only (no per-IP limit for unauthenticated traffic); they fail
+  open while Redis is down.
+- Dependency audit (Phase 7B): `pip-audit` found no known vulnerabilities in the backend
+  environment. `npm audit` reports a moderate advisory in `react-router-dom` 6.x (an open
+  redirect via backslash paths; the fix needs v7). The app's only dynamic redirect is
+  validated by `safeAppPath`. Dev-only tooling (vite 5, vitest 2, esbuild) has advisories
+  whose fixes are major upgrades; these affect the development server, not the built
+  bundle. The upgrades are deferred.
 - The first question after the API starts loads the embedding model (about a second).
 
 ## Tech stack

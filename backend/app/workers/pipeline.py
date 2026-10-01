@@ -85,14 +85,22 @@ async def _start_run(ctx: JobContext, stage: str) -> str:
     return run["id"]
 
 
-async def _finish_run(ctx: JobContext, run_id: str, started: float, *, error: ProcessingError | None, details: dict) -> None:
+async def _finish_run(
+    ctx: JobContext, run_id: str, started: float, *, stage: str, error: ProcessingError | None, details: dict
+) -> None:
+    duration_ms = int((time.monotonic() - started) * 1000)
+    logger.info(
+        "stage_finished job_id=%s lecture_id=%s stage=%s attempt=%s outcome=%s duration_ms=%s error_code=%s",
+        ctx.job_id, ctx.lecture["id"], stage, ctx.job["attempt_count"],
+        "failed" if error else "succeeded", duration_ms, error.code if error else "-",
+    )
     await ctx.admin.update(
         "processing_stage_runs",
         {"id": f"eq.{run_id}"},
         {
             "status": "failed" if error else "succeeded",
             "finished_at": _now().isoformat(),
-            "duration_ms": int((time.monotonic() - started) * 1000),
+            "duration_ms": duration_ms,
             "error_code": error.code if error else None,
             "details": {**details, **({"error": error.details} if error and error.details else {})},
         },
@@ -184,10 +192,10 @@ async def run_job(ctx: JobContext) -> str:
             error = _as_processing_error(exc)
             if error.code == "internal_error":
                 logger.exception("Stage %s crashed for job %s", stage, ctx.job_id)
-            await _finish_run(ctx, run_id, started, error=error, details={})
+            await _finish_run(ctx, run_id, started, stage=stage, error=error, details={})
             return await _fail(ctx, error)
 
-        await _finish_run(ctx, run_id, started, error=None, details=details)
+        await _finish_run(ctx, run_id, started, stage=stage, error=None, details=details)
         following = next_stage(stage)
         if following is None:
             await _set_lecture_status(ctx, "READY")

@@ -16,12 +16,13 @@ import os
 import socket
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
+from app.core.observability import correlation_id
 from app.services.queue import JobQueue, RedisJobQueue
 from app.services.supabase_admin import ServiceSupabase
 from app.workers.context import JobContext
@@ -38,6 +39,8 @@ class Worker:
         self.admin = admin
         self.queue = queue
         self.worker_id = worker_id or f"{socket.gethostname()}-{os.getpid()}-{uuid.uuid4().hex[:6]}"
+        self.started_at = datetime.now(timezone.utc).isoformat()
+        self.current_job: str | None = None
 
     # --- recovery ------------------------------------------------------------------------
 
@@ -78,22 +81,28 @@ class Worker:
         if not lectures:
             return None  # deleted in the meantime; the job row cascaded with it
 
-        logger.info("Job %s: running stage %s (attempt %s)", job_id, job["current_stage"], job["attempt_count"])
-        with job_workspace(self.settings.work_path, job_id) as workspace:
-            ctx = JobContext(self.admin, self.settings, self.worker_id, job, lectures[0], workspace)
-            work = asyncio.create_task(run_job(ctx))
-            heartbeat = asyncio.create_task(self._heartbeat(ctx, work))
-            try:
-                outcome = await work
-            except (LeaseLost, asyncio.CancelledError):
-                logger.warning("Job %s: lease lost; stopping without further writes.", job_id)
-                outcome = None
-            finally:
-                heartbeat.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await heartbeat
-        logger.info("Job %s: %s", job_id, outcome)
-        return outcome
+        correlation = correlation_id.set(job_id)  # every log line of this run carries the job id
+        self.current_job = job_id
+        try:
+            logger.info("Job %s: running stage %s (attempt %s)", job_id, job["current_stage"], job["attempt_count"])
+            with job_workspace(self.settings.work_path, job_id) as workspace:
+                ctx = JobContext(self.admin, self.settings, self.worker_id, job, lectures[0], workspace)
+                work = asyncio.create_task(run_job(ctx))
+                heartbeat = asyncio.create_task(self._heartbeat(ctx, work))
+                try:
+                    outcome = await work
+                except (LeaseLost, asyncio.CancelledError):
+                    logger.warning("Job %s: lease lost; stopping without further writes.", job_id)
+                    outcome = None
+                finally:
+                    heartbeat.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await heartbeat
+            logger.info("Job %s: %s", job_id, outcome)
+            return outcome
+        finally:
+            self.current_job = None
+            correlation_id.reset(correlation)
 
     async def _heartbeat(self, ctx: JobContext, work: asyncio.Task) -> None:
         while True:
@@ -109,13 +118,19 @@ class Worker:
     # --- main loop -----------------------------------------------------------------------
 
     async def run(self, stop: asyncio.Event) -> None:
-        remove_stale_workspaces(self.settings.work_path, older_than_seconds=max(3600, self.settings.worker_lease_seconds * 4))
+        stale_after = max(3600, self.settings.worker_lease_seconds * 4)
+        remove_stale_workspaces(self.settings.work_path, older_than_seconds=stale_after)
         logger.info("Worker %s started (stages: %s)", self.worker_id, ", ".join(implemented_stages()))
         next_sweep = 0.0
+        next_cleanup = time.monotonic() + stale_after
         while not stop.is_set():
             if time.monotonic() >= next_sweep:
                 next_sweep = time.monotonic() + self.settings.worker_recovery_interval_seconds
                 await self._sweep()
+            if time.monotonic() >= next_cleanup:
+                # Long-running workers also clear workspaces left behind by crashed workers.
+                next_cleanup = time.monotonic() + stale_after
+                remove_stale_workspaces(self.settings.work_path, older_than_seconds=stale_after)
             try:
                 job_id = await self.queue.dequeue(timeout_seconds=min(5, self.settings.worker_recovery_interval_seconds))
             except Exception as exc:  # noqa: BLE001
@@ -125,7 +140,52 @@ class Worker:
             if job_id:
                 await self._safe_process(job_id)
 
+    async def announce(self) -> None:
+        """Refresh this worker's presence for readiness checks (best effort)."""
+        try:
+            await self.queue.announce_worker(
+                self.worker_id,
+                {
+                    "worker_id": self.worker_id,
+                    "started_at": self.started_at,
+                    "last_seen": datetime.now(timezone.utc).isoformat(),
+                    "busy": self.current_job is not None,
+                },
+                self.settings.worker_presence_ttl_seconds,
+            )
+        except Exception as exc:  # noqa: BLE001 - presence is informational
+            logger.warning("worker_presence_failed error=%s", type(exc).__name__)
+
+    async def find_stuck_jobs(self) -> dict:
+        """Jobs that look stuck: due but not picked up for too long, or running far beyond normal.
+
+        Only reported (logged). The sweep itself re-queues jobs whose worker died, and fails
+        those that have already used every attempt (recover_processing_jobs).
+        """
+        now = datetime.now(timezone.utc)
+        queued_cutoff = (now - timedelta(seconds=self.settings.stuck_queued_seconds)).isoformat()
+        running_cutoff = (now - timedelta(seconds=self.settings.stuck_running_seconds)).isoformat()
+        overdue = await self.admin.select(
+            "processing_jobs",
+            {"select": "id,lecture_id,current_stage", "status": "eq.queued", "next_attempt_at": f"lt.{queued_cutoff}"},
+        )
+        long_running = await self.admin.select(
+            "processing_jobs",
+            {"select": "id,lecture_id,current_stage", "status": "eq.running", "started_at": f"lt.{running_cutoff}"},
+        )
+        for kind, jobs in (("queued_overdue", overdue), ("long_running", long_running)):
+            for job in jobs:
+                logger.warning(
+                    "stuck_job kind=%s job_id=%s lecture_id=%s stage=%s", kind, job["id"], job["lecture_id"], job["current_stage"]
+                )
+        return {"queued_overdue": [job["id"] for job in overdue], "long_running": [job["id"] for job in long_running]}
+
     async def _sweep(self) -> None:
+        await self.announce()
+        try:
+            await self.find_stuck_jobs()
+        except Exception:  # noqa: BLE001 - detection must never stop processing
+            logger.warning("stuck_job_check_failed")
         try:
             due = await self.recover()
         except Exception:  # noqa: BLE001

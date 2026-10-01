@@ -7,7 +7,7 @@ history.py, profile.py) instead of growing a single flat file.
 
 from fastapi import APIRouter
 
-from app.api import health, ingestion, lectures, me, workspace
+from app.api import health, history, ingestion, lectures, me, search, workspace
 
 api_router = APIRouter()
 api_router.include_router(health.router)
@@ -17,3 +17,5 @@ api_router.include_router(me.router)
 api_router.include_router(ingestion.router)
 api_router.include_router(lectures.router)
 api_router.include_router(workspace.router)
+api_router.include_router(search.router)
+api_router.include_router(history.router)

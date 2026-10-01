@@ -13,7 +13,7 @@ from urllib.parse import quote
 import httpx
 
 from app.core.config import Settings
-from app.core.errors import UpstreamServiceError
+from app.core.errors import UpstreamServiceError, upstream_error_summary
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,9 @@ class ServiceSupabase:
         if response.status_code >= 400:
             if _is_too_large(response):
                 raise StorageObjectTooLarge()
-            logger.error("Supabase %s %s failed with %s: %s", method, label, response.status_code, response.text[:500])
+            logger.error(
+                "Supabase %s %s failed with %s: %s", method, label, response.status_code, upstream_error_summary(response.text)
+            )
             raise UpstreamServiceError()
         return response
 
@@ -144,7 +146,7 @@ class ServiceSupabase:
             ) as response:
                 if response.status_code >= 400:
                     body = (await response.aread())[:300]
-                    logger.error("Storage download %s failed with %s: %s", path, response.status_code, body)
+                    logger.error("Storage download failed with %s: %s", response.status_code, upstream_error_summary(body))
                     raise UpstreamServiceError()
                 with destination.open("wb") as handle:
                     async for block in response.aiter_bytes(1024 * 1024):
@@ -153,7 +155,7 @@ class ServiceSupabase:
                             raise StorageObjectTooLarge()
                         handle.write(block)
         except httpx.HTTPError as exc:
-            logger.error("Storage download %s failed: %s", path, exc)
+            logger.error("Storage download failed: %s", type(exc).__name__)
             raise UpstreamServiceError() from exc
         return written
 
@@ -165,6 +167,22 @@ class ServiceSupabase:
 
     async def remove_objects(self, bucket: str, paths: list[str]) -> None:
         await self._send("DELETE", f"{self._storage}/object/{bucket}", label="storage delete", json={"prefixes": paths})
+
+    async def list_objects(self, bucket: str, prefix: str) -> list[dict]:
+        """One level of a bucket "folder": files carry an id; sub-folders don't."""
+        entries, offset = [], 0
+        while True:
+            response = await self._send(
+                "POST",
+                f"{self._storage}/object/list/{bucket}",
+                label="storage list",
+                json={"prefix": prefix, "limit": 1000, "offset": offset, "sortBy": {"column": "name", "order": "asc"}},
+            )
+            batch = response.json()
+            entries.extend(batch)
+            if len(batch) < 1000:
+                return entries
+            offset += 1000
 
 
 def _is_too_large(response: httpx.Response) -> bool:

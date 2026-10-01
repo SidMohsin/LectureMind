@@ -54,6 +54,13 @@ def _matches(row: dict, filters: dict[str, str]) -> bool:
         elif expression == "is.null":
             if value is not None:
                 return False
+        elif expression.startswith(("lt.", "gt.")):
+            # Timestamps compare as instants; a NULL never matches (as in PostgREST).
+            if value is None:
+                return False
+            left, right = _ts(value), _ts(expression[3:])
+            if (left >= right) if expression.startswith("lt.") else (left <= right):
+                return False
         else:
             raise NotImplementedError(expression)
     return True
@@ -172,7 +179,14 @@ class FakeAdmin:
         if function == "recover_processing_jobs":
             for job in jobs:
                 if job["status"] == "running" and _ts(job["lease_expires_at"]) < now():
-                    job.update(status="queued", lease_owner=None, lease_expires_at=None)
+                    if job["attempt_count"] >= job["max_attempts"]:
+                        job.update(status="failed", lease_owner=None, lease_expires_at=None, error_code="processing_interrupted",
+                                   retryable=True, failed_at=now().isoformat(), finished_at=now().isoformat())
+                        for lecture in self.tables["lectures"]:
+                            if lecture["id"] == job["lecture_id"] and lecture["status"] not in ("READY", "FAILED"):
+                                lecture["status"] = "FAILED"
+                    else:
+                        job.update(status="queued", lease_owner=None, lease_expires_at=None)
             due = [j for j in jobs if j["status"] == "queued" and _ts(j["next_attempt_at"]) <= now()]
             return [{"job_id": j["id"]} for j in due][: args.get("p_limit", 50)]
         raise NotImplementedError(function)
@@ -210,6 +224,7 @@ class FakeQueue:
     def __init__(self, fail: bool = False):
         self.items: list[str] = []
         self.fail = fail
+        self.workers: dict[str, dict] = {}
 
     async def enqueue(self, job_id, *, dedupe_seconds=0):
         if self.fail:
@@ -226,6 +241,16 @@ class FakeQueue:
 
     async def ping(self):
         return not self.fail
+
+    async def announce_worker(self, worker_id, info, ttl_seconds):
+        if self.fail:
+            raise ConnectionError("redis down")
+        self.workers[worker_id] = info
+
+    async def active_workers(self):
+        if self.fail:
+            raise ConnectionError("redis down")
+        return list(self.workers.values())
 
     async def close(self):
         pass

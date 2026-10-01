@@ -1,6 +1,7 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import FullPageLoader from "../components/feedback/FullPageLoader";
 import { useAuth } from "./AuthContext";
+import { safeAppPath } from "./safeRedirect";
 
 /**
  * For login / sign-up / forgot-password: once a session exists, send the user
@@ -14,7 +15,7 @@ export default function PublicOnlyRoute() {
 
   if (status === "authenticated") {
     const from = location.state?.from;
-    const target = from ? `${from.pathname}${from.search ?? ""}` : "/dashboard";
+    const target = from ? safeAppPath(from.pathname, from.search) : "/dashboard";
     return <Navigate to={target} replace />;
   }
 

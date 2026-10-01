@@ -12,7 +12,7 @@ import httpx
 from fastapi import HTTPException, status
 
 from app.core.config import Settings
-from app.core.errors import UpstreamServiceError
+from app.core.errors import UpstreamServiceError, upstream_error_summary
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,9 @@ class UserScopedSupabase:
         if response.status_code == status.HTTP_401_UNAUTHORIZED:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Your session has expired.")
         if response.status_code >= 400:
-            logger.error("Supabase %s %s failed with %s: %s", method, label, response.status_code, response.text)
+            logger.error(
+                "Supabase %s %s failed with %s: %s", method, label, response.status_code, upstream_error_summary(response.text)
+            )
             raise UpstreamServiceError()
         return response
 

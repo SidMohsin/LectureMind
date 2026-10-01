@@ -7,6 +7,7 @@ worker's periodic database sweep. Only basic list/string commands are used,
 so any Redis server (including older Windows ports) works.
 """
 
+import json
 from typing import Protocol
 
 import redis.asyncio as redis
@@ -20,6 +21,10 @@ class JobQueue(Protocol):
     async def dequeue(self, timeout_seconds: int) -> str | None: ...
 
     async def ping(self) -> bool: ...
+
+    async def announce_worker(self, worker_id: str, info: dict, ttl_seconds: int) -> None: ...
+
+    async def active_workers(self) -> list[dict]: ...
 
     async def close(self) -> None: ...
 
@@ -52,6 +57,16 @@ class RedisJobQueue:
 
     async def ping(self) -> bool:
         return bool(await self._redis.ping())
+
+    # Worker presence: each worker refreshes a key that expires on its own, so a dead
+    # worker disappears within ttl_seconds without any cleanup.
+    async def announce_worker(self, worker_id: str, info: dict, ttl_seconds: int) -> None:
+        await self._redis.set(f"{self._name}:worker:{worker_id}", json.dumps(info), ex=ttl_seconds)
+
+    async def active_workers(self) -> list[dict]:
+        keys = [key async for key in self._redis.scan_iter(match=f"{self._name}:worker:*", count=100)]
+        values = await self._redis.mget(keys) if keys else []
+        return [json.loads(value) for value in values if value]
 
     async def close(self) -> None:
         await self._redis.aclose()

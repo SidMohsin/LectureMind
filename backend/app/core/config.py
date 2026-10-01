@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     database_url: str = ""
 
     # Processing queue + worker
-    redis_url: str = "redis://localhost:6379/0"
+    redis_url: str = "redis://127.0.0.1:6379/0"
     queue_name: str = "lecturemind:processing"
     worker_lease_seconds: int = 120
     worker_heartbeat_seconds: int = 30
@@ -112,15 +112,62 @@ class Settings(BaseSettings):
     # Interactive requests shouldn't sit out long provider rate limits.
     rag_rate_limit_retries: int = 1
 
+    # --- Search (Phase 7A) ---
+    # Semantic content search across the user's lectures: candidates ranked in the
+    # database, the minimum cosine similarity to show a passage, and at most this many
+    # passages per lecture so one lecture can't fill the results.
+    search_candidates: int = 40
+    search_min_similarity: float = 0.6
+    search_max_per_lecture: int = 3
+
+    # --- Hardening (Phase 7B) ---
+    # Per-user rate limits for expensive operations, as "<requests>/<seconds>"; empty = off.
+    # Counted in Redis (fixed window). If Redis is unreachable the request is allowed
+    # and a warning is logged, so a Redis outage never blocks the product.
+    rate_limit_questions: str = "20/300"
+    rate_limit_search: str = "60/60"
+    rate_limit_uploads: str = "10/3600"
+    rate_limit_sources: str = "10/3600"
+    # Worker availability and stuck-job detection.
+    worker_presence_ttl_seconds: int = 60
+    stuck_queued_seconds: int = 900
+    stuck_running_seconds: int = 4 * 3600
+    # "text" (human-readable key=value) or "json" (one JSON object per line).
+    log_format: str = "text"
+
+    # --- Offline research evaluation (backend/evaluation; never used by the API) ---
+    # The dedicated Supabase account that owns evaluation lectures. The evaluator refuses
+    # lectures owned by anyone else, so production users' data can't enter an experiment.
+    eval_user_id: str = ""
+    # Secondary LLM judge (must differ from the answer generator), OpenAI-compatible.
+    eval_judge_base_url: str = ""
+    eval_judge_api_key: str = ""
+    eval_judge_model: str = ""
+    eval_judge_temperature: float = 0.0
+
+    @field_validator("rate_limit_questions", "rate_limit_search", "rate_limit_uploads", "rate_limit_sources", mode="after")
+    @classmethod
+    def _rate_limit_format(cls, value: str) -> str:
+        value = value.strip()
+        if value:
+            count, _, window = value.partition("/")
+            if not (count.isdigit() and window.isdigit() and int(count) > 0 and int(window) > 0):
+                raise ValueError("Rate limits look like '20/300' (requests per seconds), or empty to disable.")
+        return value
+
     @field_validator("redis_url", mode="after")
     @classmethod
     def _redis_default(cls, value: str) -> str:
         # An empty REDIS_URL= line (older .env templates) means "use the local default".
-        return value or "redis://localhost:6379/0"
+        return value or "redis://127.0.0.1:6379/0"
 
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_allow_origins.split(",") if origin.strip()]
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment == "production"
 
     @property
     def is_development(self) -> bool:

@@ -56,6 +56,7 @@ function renderAt(path) {
         <Routes>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/library" element={<Library />} />
+          <Route path="/search" element={<p>Search page</p>} />
           <Route path="/lectures/new" element={<Upload />} />
           <Route path="/lectures/:id/processing" element={<Processing />} />
           <Route path="*" element={null} />
@@ -214,12 +215,12 @@ describe("Dashboard", () => {
     expect(screen.queryByRole("table")).toBeNull();
   });
 
-  it("quick search opens the library with the query", async () => {
+  it("quick search opens Search with the query", async () => {
     lectures.listLectures.mockResolvedValue(page([]));
     renderAt("/dashboard");
-    fireEvent.change(screen.getByLabelText("Search your library"), { target: { value: "duality" } });
+    fireEvent.change(screen.getByLabelText("Search your lectures"), { target: { value: "duality" } });
     fireEvent.submit(screen.getByRole("search"));
-    await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/library?q=duality"));
+    await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/search?q=duality"));
   });
 });
 

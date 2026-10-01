@@ -63,6 +63,36 @@ class QAResult:
     timings: dict = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class Abstention:
+    """Which abstention stages are active. Production always uses all three (the default);
+    the offline evaluator can switch stages off for ablations."""
+
+    use_threshold: bool = True  # decline when no chunk reaches rag_min_similarity (no LLM call)
+    use_model_answerable: bool = True  # decline when the model reports answerable=false
+    require_valid_citations: bool = True  # decline when no citation names a retrieved passage
+
+
+FULL_ABSTENTION = Abstention()
+
+
+@dataclass
+class Retrieval:
+    candidates: list[dict]
+    embed_ms: int
+    search_ms: int
+
+
+async def retrieve_candidates(question: str, retrieve, embedder: Embedder, top_k: int) -> Retrieval:
+    """Embed the question with the index's model and fetch the top-k chunks (best first)."""
+    embed_started = time.monotonic()
+    vector = await anyio.to_thread.run_sync(embedder.embed_query, question)
+    embed_ms = int((time.monotonic() - embed_started) * 1000)
+    search_started = time.monotonic()
+    candidates = await retrieve(to_pgvector(vector), top_k)
+    return Retrieval(candidates=candidates, embed_ms=embed_ms, search_ms=int((time.monotonic() - search_started) * 1000))
+
+
 class IncompatibleIndex(Exception):
     """The lecture's vectors were made with a different embedding model than queries use."""
 
@@ -117,7 +147,7 @@ def build_prompt(question: str, lecture_title: str, passages: list[Passage]) -> 
     )
 
 
-def interpret(raw: dict, passages: list[Passage]) -> tuple[str, str, set[int], str]:
+def interpret(raw: dict, passages: list[Passage], abstention: Abstention = FULL_ABSTENTION) -> tuple[str, str, set[int], str]:
     """(outcome, answer, cited passage numbers, decision) from the model's JSON."""
     valid = {p.number for p in passages}
     cited = set()
@@ -129,9 +159,9 @@ def interpret(raw: dict, passages: list[Passage]) -> tuple[str, str, set[int], s
         if number in valid:
             cited.add(number)
     answer = " ".join(str(raw.get("answer") or "").split())[:4000]
-    if raw.get("answerable") is not True or not answer:
+    if not answer or (abstention.use_model_answerable and raw.get("answerable") is not True):
         return "insufficient_evidence", INSUFFICIENT_EVIDENCE, set(), "model_declined"
-    if not cited:
+    if not cited and abstention.require_valid_citations:
         # An answer that cites nothing retrieved can't be shown as lecture content.
         return "insufficient_evidence", INSUFFICIENT_EVIDENCE, set(), "no_valid_citations"
     return "answered", answer, cited, "answered"
@@ -158,20 +188,18 @@ async def answer_question(
     embedder: Embedder,
     provider: LLMProvider | None,
     settings: Settings,
+    abstention: Abstention = FULL_ABSTENTION,
 ) -> QAResult:
     """Run the grounded Q&A flow for one question about one (already authorized) lecture."""
     started = time.monotonic()
 
-    embed_started = time.monotonic()
-    vector = await anyio.to_thread.run_sync(embedder.embed_query, question)
-    embed_ms = int((time.monotonic() - embed_started) * 1000)
-
-    search_started = time.monotonic()
-    candidates = await retrieve(to_pgvector(vector), settings.rag_top_k)
-    search_ms = int((time.monotonic() - search_started) * 1000)
+    fetched = await retrieve_candidates(question, retrieve, embedder, settings.rag_top_k)
+    candidates, embed_ms, search_ms = fetched.candidates, fetched.embed_ms, fetched.search_ms
     retrieval_ms = embed_ms + search_ms
 
-    passages = select_evidence(candidates, settings.rag_min_similarity, settings.rag_context_tokens)
+    # Without the threshold stage every candidate is evidence (within the context budget).
+    min_similarity = settings.rag_min_similarity if abstention.use_threshold else float("-inf")
+    passages = select_evidence(candidates, min_similarity, settings.rag_context_tokens)
     retrieval = {
         "top_k": settings.rag_top_k,
         "min_similarity": settings.rag_min_similarity,
@@ -207,7 +235,7 @@ async def answer_question(
     )
     llm_ms = int((time.monotonic() - llm_started) * 1000)
 
-    outcome, answer, cited, decision = interpret(raw, passages)
+    outcome, answer, cited, decision = interpret(raw, passages, abstention)
     retrieval["decision"] = decision
     sources = [source_record(p, p.number in cited) for p in passages] if outcome == "answered" else []
     return QAResult(

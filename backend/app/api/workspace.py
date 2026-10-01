@@ -10,11 +10,12 @@ import asyncio
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 
 from app.api.deps import get_current_user, get_user_db
 from app.core.config import Settings, get_settings
 from app.core.errors import AppError
+from app.core.rate_limit import rate_limited
 from app.core.security import AuthenticatedUser
 from app.intelligence.embeddings import FastEmbedEmbedder
 from app.repositories import lectures as lecture_repo
@@ -154,7 +155,11 @@ def get_admin(request: Request, settings: Settings = Depends(get_settings)) -> S
     return ServiceSupabase(request.app.state.http, settings)
 
 
-@router.post("/{lecture_id}/questions", response_model=QuestionAnswer)
+@router.post(
+    "/{lecture_id}/questions",
+    response_model=QuestionAnswer,
+    dependencies=[Depends(rate_limited("questions", "rate_limit_questions"))],
+)
 async def ask_question(
     lecture_id: uuid.UUID,
     body: QuestionRequest,
@@ -190,7 +195,9 @@ async def ask_question(
             question=body.question, lecture=lecture, retrieve=retrieve, embedder=embedder, provider=provider, settings=settings
         )
     except LLMError as error:
-        logger.warning("Q&A generation failed for lecture %s: %s %s", lecture_id, error.code, error.details)
+        logger.warning(
+            "qa_failed lecture_id=%s error_code=%s status=%s", lecture_id, error.code, (error.details or {}).get("status", "-")
+        )
         if error.code == "llm_not_configured":
             raise AppError(status.HTTP_503_SERVICE_UNAVAILABLE, error.code, "Answering questions isn't configured on the server.") from None
         raise AppError(
@@ -199,6 +206,10 @@ async def ask_question(
             "An answer couldn't be generated right now. Please try again in a moment.",
         ) from None
 
+    logger.info(
+        "qa_answered lecture_id=%s outcome=%s decision=%s retrieval_ms=%s llm_ms=%s latency_ms=%s",
+        lecture_id, result.outcome, result.retrieval.get("decision"), result.retrieval_ms, result.llm_ms, result.latency_ms,
+    )
     row = await admin.insert(
         "chat_logs",
         {
@@ -219,3 +230,16 @@ async def ask_question(
         },
     )
     return {key: row[key] for key in CHAT_FIELDS.split(",")}
+
+
+@router.delete("/{lecture_id}/questions", status_code=status.HTTP_204_NO_CONTENT)
+async def clear_questions(
+    lecture_id: uuid.UUID,
+    user: AuthenticatedUser = Depends(get_current_user),
+    db: UserScopedSupabase = Depends(get_user_db),
+    admin: ServiceSupabase = Depends(get_admin),
+):
+    """Delete all of the caller's questions about one of their lectures."""
+    await _owned_lecture(db, user, lecture_id)
+    await admin.delete("chat_logs", {"lecture_id": f"eq.{lecture_id}", "user_id": f"eq.{user.id}"})
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -11,3 +11,5 @@ dist/
 build/
 *.pyc
 .DS_Store
+# Offline evaluation run outputs (research results; keep/archive deliberately)
+backend/evaluation/runs/

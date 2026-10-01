@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { askQuestion, listQuestions } from "../../services/workspace";
-import { AlertIcon, ChevronDownIcon, ChevronUpIcon, ClockIcon, RefreshIcon, SendIcon } from "../../components/ui/icons";
+import { deleteQuestion } from "../../services/history";
+import Modal from "../../components/ui/Modal";
+import Button from "../../components/ui/Button";
+import { AlertIcon, ChevronDownIcon, ChevronUpIcon, ClockIcon, RefreshIcon, SendIcon, TrashIcon } from "../../components/ui/icons";
 import { formatClock } from "../../workspace/timeline";
 import "./QuestionPanel.css";
 
@@ -48,7 +51,7 @@ function SourceList({ sources, onSeek }) {
   );
 }
 
-function Entry({ entry, expanded, onToggle, onSeek }) {
+function Entry({ entry, expanded, onToggle, onSeek, onDelete }) {
   const cited = (entry.sources || []).filter((source) => source.cited);
   const insufficient = entry.outcome === "insufficient_evidence";
   const when = dateTime.format(new Date(entry.created_at));
@@ -69,7 +72,7 @@ function Entry({ entry, expanded, onToggle, onSeek }) {
   }
 
   return (
-    <li className={`qa-entry ${insufficient ? "qa-entry--insufficient" : ""}`}>
+    <li className={`qa-entry ${insufficient ? "qa-entry--insufficient" : ""}`} data-question-id={entry.id}>
       <div className="qa-entry__question">
         <span className="qa-entry__label mono">Question</span>
         <p>{entry.question}</p>
@@ -88,9 +91,14 @@ function Entry({ entry, expanded, onToggle, onSeek }) {
           <SourceList sources={cited} onSeek={onSeek} />
         </>
       )}
-      <p className="qa-entry__meta mono">
-        {when} · answered in {(entry.latency_ms / 1000).toFixed(1)} s
-      </p>
+      <div className="qa-entry__footer">
+        <p className="qa-entry__meta mono">
+          {when} · answered in {(entry.latency_ms / 1000).toFixed(1)} s
+        </p>
+        <button type="button" className="qa-entry__delete" onClick={() => onDelete(entry)} aria-label="Delete this question">
+          <TrashIcon size={14} />
+        </button>
+      </div>
     </li>
   );
 }
@@ -100,20 +108,25 @@ function Entry({ entry, expanded, onToggle, onSeek }) {
  * every source is a real transcript passage the server retrieved, and clicking it
  * seeks the player. Questions and answers are kept as this lecture's history.
  */
-export default function QuestionPanel({ lectureId, onSeek }) {
+export default function QuestionPanel({ lectureId, onSeek, focusQuestionId }) {
   const [entries, setEntries] = useState([]);
   const [historyState, setHistoryState] = useState("loading");
   const [expandedId, setExpandedId] = useState(null);
   const [question, setQuestion] = useState("");
   const [pending, setPending] = useState(null);
   const [failed, setFailed] = useState(null);
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState(null);
 
   const loadHistory = () => {
     setHistoryState("loading");
     listQuestions(lectureId)
       .then((data) => {
         setEntries(data.items);
-        setExpandedId(data.items[0]?.id ?? null);
+        // Opened from question history: show that answer; otherwise the latest.
+        const focused = data.items.find((item) => item.id === focusQuestionId);
+        setExpandedId(focused?.id ?? data.items[0]?.id ?? null);
         setHistoryState("ready");
       })
       .catch(() => setHistoryState("error"));
@@ -136,6 +149,25 @@ export default function QuestionPanel({ lectureId, onSeek }) {
       setFailed({ question: value, message: error.message });
     } finally {
       setPending(null);
+    }
+  };
+
+  useEffect(() => {
+    if (!focusQuestionId || expandedId !== focusQuestionId) return;
+    document.querySelector(`[data-question-id="${focusQuestionId}"]`)?.scrollIntoView?.({ block: "nearest" });
+  }, [focusQuestionId, expandedId]);
+
+  const confirmDelete = async () => {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteQuestion(pendingDelete.id);
+      setEntries((current) => current.filter((item) => item.id !== pendingDelete.id));
+      setPendingDelete(null);
+    } catch (error) {
+      setDeleteError(error.message || "The question couldn't be deleted.");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -215,10 +247,36 @@ export default function QuestionPanel({ lectureId, onSeek }) {
                 expanded={entry.id === expandedId}
                 onToggle={() => setExpandedId(entry.id === expandedId ? null : entry.id)}
                 onSeek={onSeek}
+                onDelete={setPendingDelete}
               />
             ))}
           </ol>
         </>
+      )}
+
+      {pendingDelete && (
+        <Modal
+          title="Delete this question?"
+          description={`“${pendingDelete.question}” and its answer will be removed from your history.`}
+          onClose={() => !deleting && setPendingDelete(null)}
+          busy={deleting}
+          actions={
+            <>
+              <Button variant="secondary" onClick={() => setPendingDelete(null)} disabled={deleting}>
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={confirmDelete} disabled={deleting}>
+                {deleting ? "Deleting…" : "Delete"}
+              </Button>
+            </>
+          }
+        >
+          {deleteError && (
+            <p className="qa-delete-error" role="alert">
+              {deleteError}
+            </p>
+          )}
+        </Modal>
       )}
     </section>
   );
