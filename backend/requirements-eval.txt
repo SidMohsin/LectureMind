@@ -1,0 +1,6 @@
+# Offline research evaluation only (python -m evaluation.cli). Not needed by the API or worker.
+-r requirements.txt
+# Reads the TED-LIUM test parquet.
+pyarrow>=21
+# Port of openai/whisper's EnglishTextNormalizer (MIT), for WER comparable with Whisper-style reporting.
+whisper-normalizer>=0.1.12

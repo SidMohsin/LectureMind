@@ -12,6 +12,9 @@
   agreement <run_dir> --kind K --a ID --b ID    Cohen's kappa between two judges/annotators
   wer --reference ref.txt --lecture-id ID [--start s --end e] [--text cleaned|raw]
   timings --lecture-id ID [...]                 stage processing times (+ Q&A latency) as JSON
+  asr librispeech|tedlium <file> --limit N      ASR WER/CER with the production transcriber; smoke
+      [--purpose smoke|benchmark] [--error-probe]   runs by default (benchmark = whole split)
+  asr-compare <run_dir_a> <run_dir_b>           determinism check between two ASR runs
 
 Example datasets (kind: example) produce output labelled EXAMPLE; it is never a research result.
 """
@@ -233,6 +236,32 @@ async def cmd_timings(args) -> None:
     _print(report)
 
 
+def cmd_asr(args) -> None:
+    import tempfile
+
+    from app.intelligence.transcription import FasterWhisperTranscriber
+    from evaluation import asr_benchmark
+
+    if args.purpose == "smoke":
+        print(asr_benchmark.SMOKE_LABEL)
+    with tempfile.TemporaryDirectory(prefix="lecturemind-asr-") as workdir:
+        directory = asr_benchmark.run(
+            source=args.source,
+            dataset_path=Path(args.file),
+            out_root=Path(args.out),
+            transcriber=FasterWhisperTranscriber(get_settings()),
+            purpose=args.purpose,
+            limit=args.limit,
+            error_probe_item=args.error_probe,
+            seed=args.seed,
+            workdir=Path(workdir),
+        )
+    if args.purpose == "smoke":
+        print(asr_benchmark.SMOKE_LABEL)
+    print(f"run directory: {directory}")
+    _print(json.loads((directory / "summary.json").read_text(encoding="utf-8")))
+
+
 def main(argv=None) -> None:
     parser = argparse.ArgumentParser(prog="python -m evaluation.cli", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -289,6 +318,19 @@ def main(argv=None) -> None:
     p.add_argument("--lecture-id", action="append", required=True)
     p.add_argument("--questions", action="store_true")
 
+    p = sub.add_parser("asr")
+    p.add_argument("source", choices=["librispeech", "tedlium"])
+    p.add_argument("file", help="LibriSpeech test-*.tar.gz or the TED-LIUM test .parquet")
+    p.add_argument("--purpose", choices=["smoke", "benchmark"], default="smoke")
+    p.add_argument("--limit", type=int)
+    p.add_argument("--error-probe", action="store_true", help="smoke only: add one undecodable file")
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--out", default=str(DEFAULT_RUNS_DIR / "asr"))
+
+    p = sub.add_parser("asr-compare")
+    p.add_argument("run_a")
+    p.add_argument("run_b")
+
     args = parser.parse_args(argv)
     if args.command == "validate":
         dataset = load_dataset(args.dataset)
@@ -316,6 +358,12 @@ def main(argv=None) -> None:
         asyncio.run(cmd_wer(args))
     elif args.command == "timings":
         asyncio.run(cmd_timings(args))
+    elif args.command == "asr":
+        cmd_asr(args)
+    elif args.command == "asr-compare":
+        from evaluation.asr_benchmark import compare
+
+        _print(compare(Path(args.run_a), Path(args.run_b)))
 
 
 if __name__ == "__main__":

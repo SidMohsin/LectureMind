@@ -388,6 +388,13 @@ to production tables. Usage: `python -m evaluation.cli --help` from `backend/`.
   - Cohen's kappa;
   - latency summaries.
   `timings` exports stored stage and Q&A timings (numbers only).
+- **ASR benchmark** (`evaluation/asr_benchmark.py`; install `requirements-eval.txt`): runs the
+  production transcriber on LibriSpeech test-clean/test-other (original `.tar.gz`) and the
+  TED-LIUM 3 legacy test talks (`distil-whisper/tedlium-long-form` test parquet), read in place
+  from a data folder outside the repo. Scores WER/CER with the project normalizer and with
+  Whisper's English normalizer, separately. `asr ... --limit N` is a labelled smoke run;
+  `--purpose benchmark` scores the whole split; `asr-compare` checks two runs are identical.
+  No benchmark results have been produced yet.
 - **Literature comparison:** `evaluation/literature/comparison.json` records each paper's
   published results unchanged, with a comparability label (directly comparable,
   limited/conditional, not directly comparable) and the reason. LectureMind fields stay
