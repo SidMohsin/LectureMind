@@ -71,7 +71,7 @@ export function statusInfo(status, job) {
 export const SOURCE_TYPE_LABELS = {
   video: "Video",
   audio: "Audio",
-  url: "YouTube URL",
+  url: "YouTube",
 };
 
 /** Where "open" should take the user for a lecture in this state. */

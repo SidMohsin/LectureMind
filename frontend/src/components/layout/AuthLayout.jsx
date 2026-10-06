@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import Logo from "../brand/Logo";
 import "./AuthLayout.css";
 
 /**
@@ -8,9 +9,8 @@ import "./AuthLayout.css";
 export default function AuthLayout({ title, description, children, footer }) {
   return (
     <div className="auth-layout">
-      <Link to="/" className="auth-layout__brand">
-        <span className="auth-layout__logo-mark">T.</span>
-        <span>LectureMind</span>
+      <Link to="/" className="auth-layout__brand" aria-label="LectureMind home">
+        <Logo size={30} />
       </Link>
       <div className="auth-layout__card">
         <h1 className="auth-layout__title">{title}</h1>

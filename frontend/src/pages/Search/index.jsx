@@ -10,6 +10,8 @@ import { searchContent } from "../../services/search";
 import { formatDate } from "../../utils/format";
 import { formatClock, highlightParts } from "../../workspace/timeline";
 import { lectureLink } from "../../workspace/links";
+import { tidyTranscript } from "../../workspace/text";
+import Skeleton from "../../components/ui/Skeleton";
 import "./Search.css";
 
 const MIN_LENGTH = 3;
@@ -32,9 +34,19 @@ function Highlighted({ text, terms }) {
 function SectionStatus({ state, onRetry, loading, empty }) {
   if (state.status === "loading") {
     return (
-      <p className="search-status" role="status">
-        <span className="search-status__spinner" aria-hidden="true" /> {loading}
-      </p>
+      <div className="search-skeletons">
+        <span className="visually-hidden" role="status">
+          {loading}
+        </span>
+        {[0, 1, 2].map((key) => (
+          <div key={key} className="search-skeleton" aria-hidden="true">
+            <Skeleton width="55%" height={15} />
+            <Skeleton width={110} height={11} />
+            <Skeleton height={11} />
+            <Skeleton width="85%" height={11} />
+          </div>
+        ))}
+      </div>
     );
   }
   if (state.status === "error") {
@@ -115,7 +127,7 @@ function PassageResult({ result, terms }) {
         <ClockIcon size={13} /> {formatClock(result.start_seconds)} – {formatClock(result.end_seconds)}
       </p>
       <blockquote className={`passage__text ${expanded ? "is-expanded" : ""}`}>
-        <Highlighted text={result.text} terms={terms} />
+        <Highlighted text={tidyTranscript(result.text)} terms={terms} />
       </blockquote>
       <div className="passage__actions">
         <Link className="passage__open" to={lectureLink(lecture.id, { seconds: result.start_seconds, from: "search" })}>

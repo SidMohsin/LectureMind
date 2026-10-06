@@ -4,10 +4,11 @@ import PageContainer from "../../components/layout/PageContainer";
 import PageHeader from "../../components/layout/PageHeader";
 import Button from "../../components/ui/Button";
 import Select from "../../components/ui/Select";
+import Skeleton from "../../components/ui/Skeleton";
 import EmptyState from "../../components/ui/EmptyState";
 import ErrorState from "../../components/ui/ErrorState";
 import { useToast } from "../../components/ui/Toast";
-import { GridIcon, ListIcon, PlusIcon, RefreshIcon, SearchIcon } from "../../components/ui/icons";
+import { GridIcon, ListIcon, RefreshIcon, SearchIcon } from "../../components/ui/icons";
 import LectureItem from "../../components/lectures/LectureItem";
 import DeleteLectureDialog from "../../components/lectures/DeleteLectureDialog";
 import { useAsyncData } from "../../hooks/useAsyncData";
@@ -26,7 +27,7 @@ const SOURCE_OPTIONS = [
   { value: "", label: "Source Type: All" },
   { value: "video", label: "Video" },
   { value: "audio", label: "Audio" },
-  { value: "url", label: "YouTube URL" },
+  { value: "url", label: "YouTube" },
 ];
 
 const SORT_OPTIONS = [
@@ -73,7 +74,7 @@ export default function Library() {
   );
   const subjects = useAsyncData((options) => listSubjects(options), []);
 
-  function update(changes, { resetPage = true } = {}) {
+  function update(changes, { resetPage = true, keepScroll = true } = {}) {
     setParams(
       (current) => {
         const next = new URLSearchParams(current);
@@ -81,7 +82,7 @@ export default function Library() {
         if (resetPage) next.delete("page");
         return next;
       },
-      { replace: true }
+      { replace: true, preventScrollReset: keepScroll }
     );
   }
 
@@ -137,13 +138,7 @@ export default function Library() {
     <PageContainer>
       <PageHeader
         title="Lecture Library"
-        description="All ingested lectures, transcripts, and structured knowledge assets."
-        actions={
-          <Button as={Link} to="/lectures/new">
-            <PlusIcon size={16} />
-            Ingest Lecture
-          </Button>
-        }
+        description="All your lectures, with their transcripts, chapters and notes."
       />
 
       <section className="library-controls" aria-label="Search and filter lectures">
@@ -208,16 +203,15 @@ export default function Library() {
             </Button>
           )}
           <div className="library-controls__sort">
-            <label htmlFor="sort" className="library-controls__sort-label mono">
-              Sort by:
-            </label>
-            <select id="sort" value={sort} onChange={(event) => update({ sort: event.target.value })}>
-              {SORT_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+            <Select
+              id="sort"
+              label="Sort by"
+              hideLabel
+              prefix="Sort:"
+              options={SORT_OPTIONS}
+              value={sort}
+              onChange={(event) => update({ sort: event.target.value })}
+            />
           </div>
         </div>
       </section>
@@ -252,7 +246,7 @@ export default function Library() {
               description="Upload your first lecture to turn it into a searchable knowledge workspace."
               action={
                 <Button as={Link} to="/lectures/new">
-                  Upload Lecture
+                  Add Your First Lecture
                 </Button>
               }
             />
@@ -275,18 +269,17 @@ export default function Library() {
 
             <footer className="library-pagination">
               <div className="library-pagination__size">
-                <label htmlFor="page-size">Rows per page:</label>
-                <select
+                <Select
                   id="page-size"
-                  value={pageSize}
+                  label="Rows per page"
+                  hideLabel
+                  prefix="Rows per page:"
+                  size="sm"
+                  placement="up"
+                  options={PAGE_SIZES.map((size) => ({ value: String(size), label: String(size) }))}
+                  value={String(pageSize)}
                   onChange={(event) => update({ size: event.target.value === "25" ? "" : event.target.value })}
-                >
-                  {PAGE_SIZES.map((size) => (
-                    <option key={size} value={size}>
-                      {size}
-                    </option>
-                  ))}
-                </select>
+                />
                 <span className="mono library-pagination__count">
                   Showing {firstShown} – {lastShown} of {total} {total === 1 ? "lecture" : "lectures"}
                 </span>
@@ -297,7 +290,7 @@ export default function Library() {
                     type="button"
                     disabled={page === 1}
                     aria-label="Previous page"
-                    onClick={() => update({ page: String(page - 1) }, { resetPage: false })}
+                    onClick={() => update({ page: String(page - 1) }, { resetPage: false, keepScroll: false })}
                   >
                     ‹
                   </button>
@@ -306,7 +299,7 @@ export default function Library() {
                       key={number}
                       type="button"
                       aria-current={number === page ? "page" : undefined}
-                      onClick={() => update({ page: number === 1 ? "" : String(number) }, { resetPage: false })}
+                      onClick={() => update({ page: number === 1 ? "" : String(number) }, { resetPage: false, keepScroll: false })}
                     >
                       {number}
                     </button>
@@ -315,7 +308,7 @@ export default function Library() {
                     type="button"
                     disabled={page === pageCount}
                     aria-label="Next page"
-                    onClick={() => update({ page: String(page + 1) }, { resetPage: false })}
+                    onClick={() => update({ page: String(page + 1) }, { resetPage: false, keepScroll: false })}
                   >
                     ›
                   </button>
@@ -342,11 +335,11 @@ function LectureSkeletons({ layout }) {
     <div className={`library-list library-list--${layout}`}>
       {[0, 1, 2].map((key) => (
         <div key={key} className="lecture-skeleton" aria-hidden="true">
-          <span className="lecture-skeleton__tile" />
+          <Skeleton className="lecture-skeleton__tile" height="auto" radius={10} />
           <span className="lecture-skeleton__lines">
-            <span />
-            <span />
-            <span />
+            <Skeleton width="30%" height={12} />
+            <Skeleton width="75%" height={18} />
+            <Skeleton width="45%" height={12} />
           </span>
         </div>
       ))}

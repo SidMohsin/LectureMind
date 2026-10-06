@@ -185,9 +185,12 @@ describe("Question History", () => {
     await screen.findByText("1 question");
     fireEvent.change(screen.getByPlaceholderText("Search questions and answers…"), { target: { value: "learning rate" } });
     await waitFor(() => expect(location()).toContain("q=learning+rate"));
-    await waitFor(() => expect(screen.getByLabelText("Lecture", { selector: "select" }).querySelectorAll("option")).toHaveLength(2));
-    fireEvent.change(screen.getByLabelText("Lecture", { selector: "select" }), { target: { value: LECTURE_ID } });
-    fireEvent.change(screen.getByLabelText("Order", { selector: "select" }), { target: { value: "oldest" } });
+    await waitFor(() => expect(lectures.listLectures).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("combobox", { name: "Lecture" }));
+    expect(await screen.findAllByRole("option")).toHaveLength(2);
+    fireEvent.click(screen.getByRole("option", { name: lectureRef.title }));
+    fireEvent.click(screen.getByRole("combobox", { name: "Order" }));
+    fireEvent.click(screen.getByRole("option", { name: /Oldest/ }));
     await waitFor(() =>
       expect(history.listHistory).toHaveBeenLastCalledWith({ q: "learning rate", lectureId: LECTURE_ID, order: "oldest", limit: 20, offset: 0 }, expect.anything())
     );

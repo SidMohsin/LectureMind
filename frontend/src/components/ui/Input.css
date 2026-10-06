@@ -43,3 +43,39 @@
   font-size: var(--fs-caption);
   color: var(--color-error);
 }
+
+.input-field__wrap {
+  position: relative;
+  display: flex;
+}
+
+.input-field__wrap .input-field__control {
+  flex: 1;
+  min-width: 0;
+}
+
+.input-field__control--with-toggle {
+  padding-right: 44px;
+}
+
+.input-field__toggle {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 32px;
+  transform: translateY(-50%);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+}
+
+.input-field__toggle:hover:not(:disabled) {
+  background: var(--color-surface-sunken);
+  color: var(--color-text-primary);
+}

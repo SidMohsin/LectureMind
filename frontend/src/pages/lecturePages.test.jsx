@@ -20,6 +20,12 @@ const ingestion = vi.hoisted(() => ({
 }));
 vi.mock("../services/ingestion", () => ingestion);
 
+const history = vi.hoisted(() => ({ listHistory: vi.fn() }));
+vi.mock("../services/history", () => history);
+
+const { AuthContext } = await import("../auth/AuthContext");
+const AUTH = { status: "authenticated", user: { email: "ada@example.com" }, profile: { display_name: "Ada Lovelace" } };
+
 const { default: Library } = await import("./Library");
 const { default: Dashboard } = await import("./Dashboard");
 const { default: Upload } = await import("./Upload");
@@ -51,6 +57,7 @@ function LocationProbe() {
 
 function renderAt(path) {
   return render(
+    <AuthContext.Provider value={AUTH}>
     <ToastProvider>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
@@ -64,6 +71,7 @@ function renderAt(path) {
         <LocationProbe />
       </MemoryRouter>
     </ToastProvider>
+    </AuthContext.Provider>
   );
 }
 
@@ -78,6 +86,8 @@ beforeEach(() => {
     source_providers: ["youtube"],
   });
   lectures.listSubjects.mockResolvedValue({ subjects: ["Computer Science", "Physics"] });
+  history.listHistory.mockReset();
+  history.listHistory.mockResolvedValue({ items: [], total: 0, limit: 3, offset: 0 });
   localStorage.clear();
 });
 
@@ -104,7 +114,7 @@ describe("Lecture Library", () => {
     lectures.listLectures.mockResolvedValue(page([]));
     renderAt("/library");
     expect(await screen.findByText("Your lecture library is empty")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Upload Lecture" }).getAttribute("href")).toBe("/lectures/new");
+    expect(screen.getByRole("link", { name: "Add Your First Lecture" }).getAttribute("href")).toBe("/lectures/new");
   });
 
   it("distinguishes 'no matches' from an empty library", async () => {
@@ -208,6 +218,38 @@ describe("Dashboard", () => {
     expect(screen.queryByText(/Continue Studying/)).toBeNull();
   });
 
+  it("greets the user and shows real overview counts and recent questions", async () => {
+    lectures.listLectures.mockImplementation(async ({ status, limit }) => {
+      if (status === "processing") return page([]);
+      if (status === "failed") return page([]);
+      if (status === "ready") return page([lecture({ duration_seconds: 3600 }), lecture({ duration_seconds: 1800 })], 2);
+      return page([lecture()], limit === 1 ? 7 : 1);
+    });
+    history.listHistory.mockResolvedValue({
+      items: [
+        {
+          id: "q1",
+          question: "What is a convex set?",
+          outcome: "answered",
+          created_at: "2026-10-01T10:00:00Z",
+          lecture: { id: "lec-9", title: "Convex Optimization & Duality" },
+        },
+      ],
+      total: 12,
+      limit: 3,
+      offset: 0,
+    });
+    renderAt("/dashboard");
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Welcome back, Ada" })).toBeTruthy();
+    const overview = screen.getByRole("region", { name: "Overview" });
+    expect(await within(overview).findByText("7")).toBeTruthy(); // all lectures
+    expect(within(overview).getByText("1.5 h")).toBeTruthy(); // ready lecture hours
+    expect(within(overview).getByText("12")).toBeTruthy(); // questions asked
+    const question = await screen.findByRole("link", { name: /What is a convex set\?/ });
+    expect(question.getAttribute("href")).toBe("/lectures/lec-9?question=q1&from=history");
+  });
+
   it("shows an empty state when the library is empty", async () => {
     lectures.listLectures.mockResolvedValue(page([]));
     renderAt("/dashboard");
@@ -224,7 +266,7 @@ describe("Dashboard", () => {
   });
 });
 
-describe("Ingest Lecture", () => {
+describe("Add a Lecture", () => {
   const chooseFile = (file) =>
     act(() => fireEvent.change(screen.getByLabelText(/Choose a (video|audio) file/), { target: { files: [file] } }));
   const accepted = (overrides = {}) => ({
@@ -268,7 +310,7 @@ describe("Ingest Lecture", () => {
     renderAt("/lectures/new");
     fireEvent.click(screen.getByRole("tab", { name: /YouTube/ }));
     fireEvent.change(screen.getByLabelText("Video URL"), { target: { value: "https://vimeo.com/1" } });
-    fireEvent.click(screen.getByRole("button", { name: /Start Ingestion/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Add Lecture & Start Processing/ }));
 
     expect(screen.getByText("Only YouTube links are supported right now.")).toBeTruthy();
     expect(screen.getByText("Enter the subject or discipline.")).toBeTruthy();
@@ -285,7 +327,7 @@ describe("Ingest Lecture", () => {
     });
     renderAt("/lectures/new");
     await fillValidVideo();
-    fireEvent.click(screen.getByRole("button", { name: /Start Ingestion/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Add Lecture & Start Processing/ }));
 
     expect(await screen.findByText("512 KB of 1.0 MB (50%)")).toBeTruthy();
     const call = ingestion.uploadLecture.mock.calls[0][0];
@@ -305,15 +347,15 @@ describe("Ingest Lecture", () => {
     ingestion.uploadLecture.mockRejectedValue(Object.assign(new Error("Unable to reach the server."), { status: 0 }));
     renderAt("/lectures/new");
     await fillValidVideo();
-    fireEvent.click(screen.getByRole("button", { name: /Start Ingestion/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Add Lecture & Start Processing/ }));
     await screen.findByText("Unable to reach the server.");
-    fireEvent.click(screen.getByRole("button", { name: /Start Ingestion/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Add Lecture & Start Processing/ }));
     await waitFor(() => expect(ingestion.uploadLecture).toHaveBeenCalledTimes(2));
     const [first, second] = ingestion.uploadLecture.mock.calls.map(([args]) => args.idempotencyKey);
     expect(second).toBe(first);
 
     fireEvent.change(screen.getByLabelText(/Specific Topic/), { target: { value: "Duality" } });
-    fireEvent.click(screen.getByRole("button", { name: /Start Ingestion/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Add Lecture & Start Processing/ }));
     await waitFor(() => expect(ingestion.uploadLecture).toHaveBeenCalledTimes(3));
     expect(ingestion.uploadLecture.mock.calls[2][0].idempotencyKey).not.toBe(first);
   });
@@ -327,7 +369,7 @@ describe("Ingest Lecture", () => {
     );
     renderAt("/lectures/new");
     await fillValidVideo();
-    fireEvent.click(screen.getByRole("button", { name: /Start Ingestion/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Add Lecture & Start Processing/ }));
     expect(await screen.findByText(/already in your library/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "Open the existing lecture" }).getAttribute("href")).toBe(
       "/lectures/existing-1/processing"
@@ -343,7 +385,7 @@ describe("Ingest Lecture", () => {
     );
     renderAt("/lectures/new");
     await fillValidVideo();
-    fireEvent.click(screen.getByRole("button", { name: /Start Ingestion/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Add Lecture & Start Processing/ }));
     expect(await screen.findByText(/isn't a supported video format/)).toBeTruthy();
     expect(screen.getByLabelText(/Lecture Title/).value).toBe("cs229 lecture04");
     expect(screen.queryByText("Lecture added")).toBeNull();
@@ -359,7 +401,7 @@ describe("Ingest Lecture", () => {
     );
     renderAt("/lectures/new");
     await fillValidVideo();
-    fireEvent.click(screen.getByRole("button", { name: /Start Ingestion/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Add Lecture & Start Processing/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Cancel upload" }));
     expect(await screen.findByText("Upload cancelled. Nothing was saved.")).toBeTruthy();
   });
@@ -373,7 +415,7 @@ describe("Ingest Lecture", () => {
     fireEvent.change(screen.getByLabelText("Video URL"), { target: { value: "https://youtu.be/ZA-tUyM_y7s" } });
     fireEvent.click(screen.getByLabelText(/I have the right to use this video/));
     fireEvent.change(screen.getByLabelText(/Subject \/ Discipline/), { target: { value: "Algorithms" } });
-    fireEvent.click(screen.getByRole("button", { name: /Start Ingestion/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Add Lecture & Start Processing/ }));
 
     expect(await screen.findByText("Lecture added")).toBeTruthy();
     expect(ingestion.submitSourceUrl).toHaveBeenCalledWith(

@@ -29,10 +29,26 @@ const Segment = memo(function Segment({ segment, active, query, current, onSeek 
   );
 });
 
+const COMPACT_QUERY = "(max-width: 767px)";
+
+/** True on phone-sized screens; follows rotation and window resizing. */
+function useCompactScreen() {
+  const query = typeof window !== "undefined" && window.matchMedia ? window.matchMedia(COMPACT_QUERY) : null;
+  const [compact, setCompact] = useState(() => Boolean(query?.matches));
+  useEffect(() => {
+    if (!query) return undefined;
+    const update = () => setCompact(query.matches);
+    query.addEventListener?.("change", update);
+    return () => query.removeEventListener?.("change", update);
+  }, [query]);
+  return compact;
+}
+
 /**
  * The timestamped transcript, as stored by processing (never rewritten here).
  * The active segment follows playback; clicking a segment seeks the player.
  * Following pauses when the reader scrolls themselves and can be resumed.
+ * On phones it starts collapsed to the line being spoken, so the page stays short.
  */
 export default function TranscriptPanel({ transcript, currentTime, onSeek }) {
   const segments = useMemo(() => transcript?.segments || [], [transcript]);
@@ -40,6 +56,9 @@ export default function TranscriptPanel({ transcript, currentTime, onSeek }) {
   const [query, setQuery] = useState("");
   const [matchCursor, setMatchCursor] = useState(0);
   const [follow, setFollow] = useState(true);
+  const compact = useCompactScreen();
+  const [collapsed, setCollapsed] = useState(compact);
+  useEffect(() => setCollapsed(compact), [compact]);
 
   const activeIndex = findActiveIndex(segments, currentTime);
   const matches = useMemo(() => searchSegments(segments, query), [segments, query]);
@@ -57,7 +76,7 @@ export default function TranscriptPanel({ transcript, currentTime, onSeek }) {
 
   useEffect(() => {
     if (follow && activeIndex >= 0 && !query.trim()) scrollToIndex(activeIndex);
-  }, [activeIndex, follow, query, scrollToIndex]);
+  }, [activeIndex, follow, query, scrollToIndex, collapsed]);
 
   useEffect(() => {
     if (currentMatch >= 0) scrollToIndex(currentMatch);
@@ -92,9 +111,40 @@ export default function TranscriptPanel({ transcript, currentTime, onSeek }) {
   }
 
   const stopFollowing = () => follow && setFollow(false);
+  const nowSegment = segments[Math.max(0, activeIndex)];
+  const count = `${segments.length} segments${transcript.language ? ` · ${transcript.language.toUpperCase()}` : ""}`;
 
   return (
-    <section className="transcript" aria-label="Transcript">
+    <section className={`transcript ${collapsed ? "transcript--collapsed" : ""}`} aria-label="Transcript">
+      {compact && (
+        <div className="transcript__head">
+          <div>
+            <h2 className="transcript__heading">Transcript</h2>
+            <p className="transcript__count mono">{count}</p>
+          </div>
+          <button
+            type="button"
+            className="transcript__toggle"
+            aria-expanded={!collapsed}
+            aria-controls="transcript-body"
+            onClick={() => setCollapsed((value) => !value)}
+          >
+            {collapsed ? "Show transcript" : "Hide"}
+            {collapsed ? <ChevronDownIcon size={16} /> : <ChevronUpIcon size={16} />}
+          </button>
+        </div>
+      )}
+
+      {collapsed && nowSegment && (
+        <button type="button" className="transcript__now" onClick={() => setCollapsed(false)}>
+          <span className="transcript__now-label mono">
+            {activeIndex >= 0 ? "Now playing" : "Starts"} · {formatClock(nowSegment.start)}
+          </span>
+          <span className="transcript__now-text">{nowSegment.text}</span>
+        </button>
+      )}
+
+      <div id="transcript-body" className="transcript__body" hidden={collapsed}>
       <div className="transcript__toolbar">
         <label className="transcript__search">
           <SearchIcon size={16} />
@@ -144,9 +194,8 @@ export default function TranscriptPanel({ transcript, currentTime, onSeek }) {
       <ol className="transcript__list" ref={listRef} onWheel={stopFollowing} onTouchMove={stopFollowing}>
         {rows}
       </ol>
-      <p className="transcript__footer mono">
-        {segments.length} segments{transcript.language ? ` · ${transcript.language.toUpperCase()}` : ""}
-      </p>
+      {!compact && <p className="transcript__footer mono">{count}</p>}
+      </div>
     </section>
   );
 }

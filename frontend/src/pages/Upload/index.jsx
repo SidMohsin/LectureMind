@@ -176,7 +176,7 @@ export default function Upload() {
   if (phase === "done" && result) {
     return (
       <PageContainer className="ingest">
-        <PageHeader title="Ingest Lecture" />
+        <PageHeader title="Add a Lecture" />
         <section className="ingest-card ingest-success" aria-labelledby="success-heading">
           <span className="ingest-success__icon" aria-hidden="true">
             <CheckIcon size={26} />
@@ -203,16 +203,16 @@ export default function Upload() {
   }
 
   const tabs = [
-    { id: "video", label: INPUT_KINDS.video.label, summary: `MP4, MOV <${shortSize(maxBytes("video"))}`, Icon: VideoIcon },
-    { id: "audio", label: INPUT_KINDS.audio.label, summary: `MP3, WAV <${shortSize(maxBytes("audio"))}`, Icon: AudioIcon },
-    { id: "url", label: "YouTube / Source URL", Icon: LinkIcon },
+    { id: "video", label: INPUT_KINDS.video.label, summary: `up to ${shortSize(maxBytes("video"))}`, Icon: VideoIcon },
+    { id: "audio", label: INPUT_KINDS.audio.label, summary: `up to ${shortSize(maxBytes("audio"))}`, Icon: AudioIcon },
+    { id: "url", label: "YouTube Link", Icon: LinkIcon },
   ];
 
   return (
     <PageContainer className="ingest">
       <PageHeader
-        title="Ingest Lecture"
-        description="Upload a lecture recording or provide a supported video URL to build your lecture knowledge base."
+        title="Add a Lecture"
+        description="Upload a recording or paste a YouTube link. LectureMind transcribes it and builds chapters, notes and Q&A."
       />
 
       <form className="ingest-card" onSubmit={handleSubmit} noValidate aria-busy={busy}>
@@ -343,7 +343,7 @@ export default function Upload() {
 
           <section className="ingest-next" aria-labelledby="next-heading">
             <h2 id="next-heading" className="ingest-next__title">
-              After ingestion, LectureMind will:
+              After you add it, LectureMind will:
             </h2>
             <ol className="ingest-next__steps">
               <li>Process media</li>
@@ -378,7 +378,7 @@ export default function Upload() {
               ← Cancel and return to library
             </Link>
             <Button type="submit" disabled={busy} aria-busy={busy} className="ingest-actions__primary">
-              {phase === "uploading" ? "Uploading…" : phase === "checking" ? "Checking video…" : "Start Ingestion & Processing"}
+              {phase === "uploading" ? "Uploading…" : phase === "checking" ? "Checking video…" : "Add Lecture & Start Processing"}
               {!busy && <ArrowRightIcon size={16} />}
             </Button>
           </div>

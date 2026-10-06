@@ -184,3 +184,32 @@ export const SendIcon = (p) => (
     <path d="M5 12h14M13 6l6 6-6 6" />
   </Icon>
 );
+export const FileTextIcon = (p) => (
+  <Icon {...p}>
+    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+    <path d="M14 3v5h5M9 13h6M9 17h4" />
+  </Icon>
+);
+export const LightbulbIcon = (p) => (
+  <Icon {...p}>
+    <path d="M9 18h6M10 21h4" />
+    <path d="M12 3a6 6 0 0 0-3.5 10.9c.6.4 1 1.1 1 1.8V16h5v-.3c0-.7.4-1.4 1-1.8A6 6 0 0 0 12 3z" />
+  </Icon>
+);
+export const ShieldIcon = (p) => (
+  <Icon {...p}>
+    <path d="M12 3l7 3v6c0 4.5-3 7.7-7 9-4-1.3-7-4.5-7-9V6z" />
+    <path d="M9 12l2 2 4-4" />
+  </Icon>
+);
+export const MessageIcon = (p) => (
+  <Icon {...p}>
+    <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" />
+  </Icon>
+);
+export const LayersIcon = (p) => (
+  <Icon {...p}>
+    <path d="M12 3l9 5-9 5-9-5z" />
+    <path d="M3 13l9 5 9-5" />
+  </Icon>
+);

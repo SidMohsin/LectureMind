@@ -19,18 +19,6 @@
   text-decoration: none;
 }
 
-.auth-layout__logo-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-sm);
-  background: var(--color-accent);
-  color: var(--color-text-inverse);
-  font-size: 0.85rem;
-  font-weight: 700;
-}
 
 .auth-layout__card {
   width: 100%;

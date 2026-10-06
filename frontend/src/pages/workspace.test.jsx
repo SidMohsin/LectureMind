@@ -159,6 +159,7 @@ describe("Lecture workspace", () => {
     expect(screen.getByText("The lecture introduces machine learning.")).toBeTruthy();
     expect(screen.getByText("It then covers gradient descent.")).toBeTruthy(); // paragraphs kept
     expect(screen.getByText("Labels are required.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "Lecture notes" }));
     fireEvent.click(screen.getByRole("tab", { name: "Concepts" }));
     expect(screen.getByText("Supervised learning")).toBeTruthy();
     expect(screen.getByText("The step size.")).toBeTruthy();
@@ -229,6 +230,7 @@ describe("Transcript synchronization", () => {
 describe("Chapters and intelligence timestamps", () => {
   it("lists chapters in order and seeks to a chapter", async () => {
     const media = await readyPlayer();
+    fireEvent.click(screen.getByRole("tab", { name: "Lecture notes" }));
     fireEvent.click(screen.getByRole("tab", { name: "Chapters" }));
     const items = document.querySelectorAll(".chapter-list__item");
     expect([...items].map((item) => item.querySelector(".chapter-list__title").textContent)).toEqual([
@@ -240,11 +242,12 @@ describe("Chapters and intelligence timestamps", () => {
     expect(media.currentTime).toBe(125);
     expect(HTMLMediaElement.prototype.play).toHaveBeenCalled();
     expect(document.querySelector(".chapter-list li.is-active").textContent).toContain("Gradient descent");
-    expect(screen.getByText(/Chapter 2: Gradient descent/)).toBeTruthy();
+    expect(document.querySelector(".player__audio-label").textContent).toContain("Chapter 2 · 02:05–10:00"); // audio card shows the current chapter
   });
 
   it("seeks to the earliest chunk a concept or definition cites", async () => {
     const media = await readyPlayer();
+    fireEvent.click(screen.getByRole("tab", { name: "Lecture notes" }));
     fireEvent.click(screen.getByRole("tab", { name: "Concepts" }));
     fireEvent.click(screen.getByRole("button", { name: "Play from 00:55" })); // concept cites chunk 1
     expect(media.currentTime).toBe(55);

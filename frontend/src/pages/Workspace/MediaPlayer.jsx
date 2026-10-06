@@ -21,7 +21,10 @@ const RATES = [1, 1.25, 1.5, 2];
  * API after an ownership check). The browser streams it with HTTP range requests, so
  * seeking doesn't download the whole file. Exposes seek(seconds, { play }) to the page.
  */
-const MediaPlayer = forwardRef(function MediaPlayer({ lectureId, chapters, fallbackDuration, onTimeUpdate }, ref) {
+const MediaPlayer = forwardRef(function MediaPlayer(
+  { lectureId, chapters, fallbackDuration, onTimeUpdate, artwork, title },
+  ref,
+) {
   const containerRef = useRef(null);
   const mediaRef = useRef(null);
   const pendingSeek = useRef(null);
@@ -184,7 +187,7 @@ const MediaPlayer = forwardRef(function MediaPlayer({ lectureId, chapters, fallb
       onKeyDown={onKeyDown}
       aria-label="Lecture player"
     >
-      {chapter && (
+      {chapter && (isVideo || !(phase === "ready" || phase === "loading")) && (
         <p className="player__chapter">
           <span className="player__chapter-dot" aria-hidden="true" />
           Chapter {chapter.sequence + 1}: {chapter.title}
@@ -208,9 +211,26 @@ const MediaPlayer = forwardRef(function MediaPlayer({ lectureId, chapters, fallb
         )}
         {!isVideo && (phase === "ready" || phase === "loading") && (
           <div className="player__audio-card">
-            <p className="player__audio-label mono">Lecture audio</p>
-            <p className="player__audio-title">{chapter ? chapter.title : "Lecture"}</p>
-            {chapter?.description && <p className="player__audio-description">{chapter.description}</p>}
+            {artwork && <img className="player__audio-backdrop" src={artwork} alt="" aria-hidden="true" referrerPolicy="no-referrer" />}
+            {artwork && <img className="player__audio-art" src={artwork} alt="" referrerPolicy="no-referrer" />}
+            <div className="player__audio-text">
+              <p className="player__audio-label mono">
+                <span className={`player__eq ${playing ? "is-playing" : ""}`} aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                </span>
+                <span className="player__audio-state">{playing ? "Now playing" : "Lecture audio"}</span>
+                {chapter && (
+                  <span>
+                    <span className="player__audio-sep"> · </span>
+                    Chapter {chapter.sequence + 1} · {formatClock(chapter.start_seconds)}–{formatClock(chapter.end_seconds)}
+                  </span>
+                )}
+              </p>
+              <p className="player__audio-title">{chapter ? chapter.title : title || "Lecture"}</p>
+              {chapter?.description && <p className="player__audio-description">{chapter.description}</p>}
+            </div>
           </div>
         )}
         {(phase === "fetching" || phase === "loading" || (ready && buffering)) && (

@@ -1,8 +1,9 @@
 import { Link } from "react-router-dom";
 import Button from "../ui/Button";
-import { AlertIcon, ArrowRightIcon } from "../ui/icons";
-import { SourceBadge, SourceIcon, StatusBadge } from "./LectureBadges";
+import { AlertIcon, ArrowRightIcon, PlayIcon } from "../ui/icons";
+import { SourceBadge, StatusBadge } from "./LectureBadges";
 import LectureMenu from "./LectureMenu";
+import LectureThumb from "./LectureThumb";
 import RetryButton from "./RetryButton";
 import { lecturePath, statusInfo } from "../../lectures/lectureStatus";
 import { formatDate, formatDuration } from "../../utils/format";
@@ -10,15 +11,21 @@ import "./LectureItem.css";
 
 function MediaTile({ lecture }) {
   const duration = formatDuration(lecture.duration_seconds);
-  const failed = lecture.status === "FAILED";
+  const ready = statusInfo(lecture.status).group === "ready";
   return (
-    <div className={`lecture-tile ${failed ? "lecture-tile--failed" : ""}`}>
-      <div className="lecture-tile__type">
-        <SourceBadge sourceType={lecture.source_type} />
-      </div>
-      <span className="lecture-tile__icon">{failed ? <AlertIcon size={26} /> : <SourceIcon sourceType={lecture.source_type} size={26} />}</span>
-      {duration && <span className="lecture-tile__duration">{duration}</span>}
-    </div>
+    <Link to={lecturePath(lecture)} className="lecture-tile" tabIndex={-1} aria-hidden="true">
+      <LectureThumb lecture={lecture} className="lecture-tile__art">
+        <div className="lecture-tile__type">
+          <SourceBadge sourceType={lecture.source_type} />
+        </div>
+        {ready && (
+          <span className="lecture-tile__play">
+            <PlayIcon size={18} />
+          </span>
+        )}
+        {duration && <span className="lecture-tile__duration">{duration}</span>}
+      </LectureThumb>
+    </Link>
   );
 }
 

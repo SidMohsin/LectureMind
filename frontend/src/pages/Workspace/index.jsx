@@ -4,14 +4,15 @@ import PageContainer from "../../components/layout/PageContainer";
 import Button from "../../components/ui/Button";
 import EmptyState from "../../components/ui/EmptyState";
 import ErrorState from "../../components/ui/ErrorState";
-import FullPageLoader from "../../components/feedback/FullPageLoader";
+import Skeleton, { SkeletonText } from "../../components/ui/Skeleton";
 import { useToast } from "../../components/ui/Toast";
-import { CloseIcon, ExternalIcon, PlayIcon, TrashIcon } from "../../components/ui/icons";
+import { CloseIcon, ExternalIcon, LayersIcon, MessageIcon, PlayIcon, TrashIcon } from "../../components/ui/icons";
 import { SourceBadge, StatusBadge } from "../../components/lectures/LectureBadges";
 import DeleteLectureDialog from "../../components/lectures/DeleteLectureDialog";
 import { useAsyncData } from "../../hooks/useAsyncData";
 import { getWorkspace } from "../../services/workspace";
 import { statusInfo } from "../../lectures/lectureStatus";
+import { thumbnailUrl } from "../../lectures/thumbnails";
 import { formatDate, formatDuration } from "../../utils/format";
 import { findChapterIndex, formatClock } from "../../workspace/timeline";
 import MediaPlayer from "./MediaPlayer";
@@ -55,9 +56,9 @@ function WorkspaceHeader({ lecture, onDelete }) {
         <Button as={Link} variant="secondary" to={`/lectures/${lecture.id}/processing`}>
           Processing details
         </Button>
-        <Button variant="secondary" onClick={onDelete}>
+        <Button variant="secondary" onClick={onDelete} aria-label="Delete lecture" className="workspace-header__delete">
           <TrashIcon size={15} />
-          Delete
+          <span className="workspace-header__delete-label">Delete</span>
         </Button>
       </div>
     </header>
@@ -116,6 +117,89 @@ function ContextBar({ origin, seconds, onPlay, onDismiss }) {
   );
 }
 
+/** Loading placeholder shaped like the workspace, so nothing jumps when it arrives. */
+function WorkspaceSkeleton() {
+  return (
+    <PageContainer className="workspace-page">
+      <span className="visually-hidden" role="status">
+        Loading lecture…
+      </span>
+      <div className="workspace-header workspace-header--skeleton" aria-hidden="true">
+        <div className="workspace-header__main">
+          <Skeleton width={180} height={22} radius={999} />
+          <Skeleton width="min(640px, 90%)" height={34} style={{ marginTop: 14 }} />
+          <Skeleton width={220} height={14} style={{ marginTop: 12 }} />
+        </div>
+      </div>
+      <div className="workspace-layout" aria-hidden="true">
+        <div className="workspace-main">
+          <div className="workspace-skeleton-card">
+            <Skeleton height={150} radius={12} />
+            <Skeleton height={10} radius={999} style={{ marginTop: 18 }} />
+            <div className="workspace-skeleton-row">
+              <Skeleton width={40} height={40} radius={10} />
+              <Skeleton width={120} height={14} />
+            </div>
+          </div>
+          <div className="workspace-skeleton-card">
+            <Skeleton height={36} radius={10} />
+            {[0, 1, 2, 3, 4, 5].map((key) => (
+              <div key={key} className="workspace-skeleton-row">
+                <Skeleton width={52} height={20} radius={6} />
+                <Skeleton width={`${60 + ((key * 13) % 35)}%`} height={14} />
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="workspace-side">
+          <div className="workspace-skeleton-card">
+            <Skeleton height={38} radius={10} />
+            <Skeleton height={44} radius={10} style={{ marginTop: 16 }} />
+            <div style={{ marginTop: 20 }}>
+              <SkeletonText lines={4} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </PageContainer>
+  );
+}
+
+/** Right column: one place for Q&A and the generated notes, switched by tabs. */
+function SidePanel({ tab, onTab, qa, notes }) {
+  const tabs = [
+    { id: "ask", label: "Ask", Icon: MessageIcon },
+    { id: "notes", label: "Lecture notes", Icon: LayersIcon },
+  ];
+  return (
+    <div className="workspace-panel">
+      <div className="workspace-panel__switch" role="tablist" aria-label="Workspace panel">
+        {tabs.map(({ id, label, Icon }) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            id={`side-tab-${id}`}
+            aria-selected={tab === id}
+            aria-controls={`side-panel-${id}`}
+            className="workspace-panel__tab"
+            onClick={() => onTab(id)}
+          >
+            <Icon size={15} />
+            {label}
+          </button>
+        ))}
+      </div>
+      <div id="side-panel-ask" role="tabpanel" aria-labelledby="side-tab-ask" hidden={tab !== "ask"}>
+        {qa}
+      </div>
+      <div id="side-panel-notes" role="tabpanel" aria-labelledby="side-tab-notes" hidden={tab !== "notes"}>
+        {notes}
+      </div>
+    </div>
+  );
+}
+
 function readSeconds(value) {
   const seconds = Number.parseFloat(value ?? "");
   return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
@@ -132,6 +216,7 @@ export default function Workspace() {
   const toast = useToast();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+  const [sideTab, setSideTab] = useState("ask");
   const playerRef = useRef(null);
   const workspace = useAsyncData((options) => getWorkspace(id, options), [id]);
 
@@ -148,7 +233,7 @@ export default function Workspace() {
     playerRef.current?.seek(startAt);
   }, [isReady, startAt]);
 
-  if (workspace.status === "loading" && !workspace.data) return <FullPageLoader label="Loading lecture…" />;
+  if (workspace.status === "loading" && !workspace.data) return <WorkspaceSkeleton />;
 
   if (workspace.status === "error") {
     const missing = workspace.error.status === 404 || workspace.error.status === 422;
@@ -207,6 +292,8 @@ export default function Workspace() {
                 chapters={chapters}
                 fallbackDuration={lecture.duration_seconds}
                 onTimeUpdate={setCurrentTime}
+                artwork={thumbnailUrl(lecture)}
+                title={lecture.title}
               />
             </div>
             <div className="workspace-area workspace-area--chapters">
@@ -217,16 +304,20 @@ export default function Workspace() {
             </div>
           </div>
           <div className="workspace-side">
-            <div className="workspace-area workspace-area--qa">
-              <QuestionPanel lectureId={lecture.id} onSeek={seek} focusQuestionId={focusQuestion} />
-            </div>
-            <div className="workspace-area workspace-area--intel">
-              <IntelligencePanel
-                intelligence={intelligence}
-                chapters={chapters}
-                chunks={chunks}
-                currentTime={currentTime}
-                onSeek={seek}
+            <div className="workspace-area workspace-area--side">
+              <SidePanel
+                tab={sideTab}
+                onTab={setSideTab}
+                qa={<QuestionPanel lectureId={lecture.id} onSeek={seek} focusQuestionId={focusQuestion} />}
+                notes={
+                  <IntelligencePanel
+                    intelligence={intelligence}
+                    chapters={chapters}
+                    chunks={chunks}
+                    currentTime={currentTime}
+                    onSeek={seek}
+                  />
+                }
               />
             </div>
           </div>

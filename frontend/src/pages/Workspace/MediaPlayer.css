@@ -64,19 +64,61 @@
 }
 
 .player__audio-card {
+  position: relative;
   display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+  align-items: center;
+  gap: var(--space-5);
   min-height: 132px;
-  justify-content: center;
-  padding: var(--space-6);
-  background: var(--color-accent);
+  padding: var(--space-5) var(--space-6);
+  overflow: hidden;
+  background: linear-gradient(135deg, #18245f 0%, var(--color-accent) 60%, #2a3f9a 100%);
   color: var(--color-text-inverse);
 }
 
+/* Blurred, darkened artwork behind the text. */
+.player__audio-backdrop {
+  position: absolute;
+  inset: -20px;
+  width: calc(100% + 40px);
+  height: calc(100% + 40px);
+  object-fit: cover;
+  filter: blur(24px) saturate(1.2);
+  opacity: 0.35;
+}
+
+.player__audio-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(16, 24, 64, 0.65), rgba(16, 24, 64, 0.35));
+}
+
+.player__audio-art {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  width: 168px;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.player__audio-text {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
 .player__audio-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
   margin: 0;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.75);
   font-size: var(--fs-caption);
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -84,7 +126,7 @@
 
 .player__audio-title {
   margin: 0;
-  font-size: 1.3rem;
+  font-size: 1.25rem;
   font-weight: 600;
   letter-spacing: -0.01em;
 }
@@ -92,8 +134,79 @@
 .player__audio-description {
   margin: 0;
   max-width: 64ch;
-  color: rgba(255, 255, 255, 0.82);
+  color: rgba(255, 255, 255, 0.85);
   font-size: var(--fs-body-sm);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Small equalizer: still when paused, moving while playing. */
+.player__eq {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 11px;
+}
+
+.player__eq span {
+  width: 3px;
+  height: 40%;
+  border-radius: 1px;
+  background: #7aa2ff;
+}
+
+.player__eq span:nth-child(2) {
+  height: 75%;
+}
+
+.player__eq.is-playing span {
+  animation: player-eq 900ms ease-in-out infinite alternate;
+}
+
+.player__eq.is-playing span:nth-child(2) {
+  animation-delay: -300ms;
+}
+
+.player__eq.is-playing span:nth-child(3) {
+  animation-delay: -600ms;
+}
+
+@keyframes player-eq {
+  from {
+    height: 20%;
+  }
+  to {
+    height: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .player__eq.is-playing span {
+    animation: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .player__audio-card {
+    padding: var(--space-4);
+    gap: var(--space-4);
+  }
+  .player__audio-art {
+    width: 96px;
+  }
+  .player__audio-title {
+    font-size: 1.05rem;
+  }
+  .player__audio-description {
+    display: none;
+  }
+  /* Keep the label on one line: chapter and time only. */
+  .player__audio-state,
+  .player__audio-sep {
+    display: none;
+  }
 }
 
 .player__overlay {

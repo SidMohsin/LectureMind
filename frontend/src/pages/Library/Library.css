@@ -139,9 +139,7 @@
 }
 
 .lecture-skeleton__tile {
-  aspect-ratio: 16 / 10;
-  border-radius: var(--radius-md);
-  background: var(--color-surface-sunken);
+  aspect-ratio: 16 / 9;
 }
 
 .lecture-skeleton__lines {
@@ -149,23 +147,6 @@
   flex-direction: column;
   justify-content: center;
   gap: var(--space-3);
-}
-
-.lecture-skeleton__lines span {
-  height: 12px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-sunken);
-}
-
-.lecture-skeleton__lines span:nth-child(1) {
-  width: 40%;
-}
-.lecture-skeleton__lines span:nth-child(2) {
-  width: 70%;
-  height: 18px;
-}
-.lecture-skeleton__lines span:nth-child(3) {
-  width: 30%;
 }
 
 /* ---- pagination --------------------------------------------------------------- */

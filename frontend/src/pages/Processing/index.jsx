@@ -4,7 +4,7 @@ import PageContainer from "../../components/layout/PageContainer";
 import Button from "../../components/ui/Button";
 import EmptyState from "../../components/ui/EmptyState";
 import ErrorState from "../../components/ui/ErrorState";
-import FullPageLoader from "../../components/feedback/FullPageLoader";
+import Skeleton from "../../components/ui/Skeleton";
 import { AlertIcon, CheckIcon } from "../../components/ui/icons";
 import { SourceBadge, StatusBadge } from "../../components/lectures/LectureBadges";
 import RetryButton from "../../components/lectures/RetryButton";
@@ -40,12 +40,35 @@ function stageStates(job, runs, implemented) {
   });
 }
 
+function ProcessingSkeleton() {
+  return (
+    <PageContainer>
+      <span className="visually-hidden" role="status">
+        Loading processing status…
+      </span>
+      <div className="processing-skeleton" aria-hidden="true">
+        <Skeleton width={120} height={12} />
+        <Skeleton width="min(560px, 90%)" height={30} />
+        <Skeleton width={240} height={14} />
+        <div className="processing-skeleton__card">
+          {[0, 1, 2, 3, 4, 5, 6].map((key) => (
+            <div key={key} className="processing-skeleton__row">
+              <Skeleton width={28} height={28} radius={999} />
+              <Skeleton width={`${40 + ((key * 11) % 30)}%`} height={14} />
+            </div>
+          ))}
+        </div>
+      </div>
+    </PageContainer>
+  );
+}
+
 export default function Processing() {
   const { id } = useParams();
   const [showDetails, setShowDetails] = useState(false);
   const details = useAsyncData((options) => getProcessingDetails(id, options), [id], { poll: POLL });
 
-  if (details.status === "loading" && !details.data) return <FullPageLoader label="Loading processing status…" />;
+  if (details.status === "loading" && !details.data) return <ProcessingSkeleton />;
 
   if (details.status === "error") {
     const missing = details.error.status === 404 || details.error.status === 422;

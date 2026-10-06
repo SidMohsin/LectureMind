@@ -278,3 +278,17 @@
     padding: var(--space-3) var(--space-4) var(--space-4);
   }
 }
+
+.history-skeletons {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.history-skeleton {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}

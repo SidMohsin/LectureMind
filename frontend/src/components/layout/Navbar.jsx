@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { NavLink, Link, useLocation } from "react-router-dom";
 import Button from "../ui/Button";
+import Logo from "../brand/Logo";
 import { CloseIcon, MenuIcon } from "../ui/icons";
 import { useAuth } from "../../auth/AuthContext";
 import { displayNameFor, initialsFor } from "../../auth/identity";
@@ -56,9 +57,8 @@ export default function Navbar() {
   return (
     <header className="navbar">
       <div className="navbar__inner">
-        <Link to="/" className="navbar__brand">
-          <span className="navbar__logo-mark">T.</span>
-          <span className="navbar__logo-text">LectureMind</span>
+        <Link to="/" className="navbar__brand" aria-label="LectureMind home">
+          <Logo />
         </Link>
 
         <nav className="navbar__links" aria-label="Primary">
@@ -86,18 +86,8 @@ export default function Navbar() {
 
         <div className="navbar__actions">
           <Button as={Link} to="/lectures/new" variant="primary" className="navbar__upload">
-            Upload Lecture
+            Add Lecture
           </Button>
-
-          <button
-            className="navbar__icon-btn"
-            aria-label="Notifications (available in a later phase)"
-            title="Notifications are not available yet"
-            type="button"
-            disabled
-          >
-            <BellIcon />
-          </button>
 
           <div className="navbar__user" ref={menuRef}>
             <button
@@ -112,15 +102,19 @@ export default function Navbar() {
               <span className="navbar__avatar" aria-hidden="true">
                 {initialsFor(name)}
               </span>
-              <span className="navbar__user-meta" aria-hidden="true">
-                <span className="navbar__user-name">{name}</span>
-                <span className="navbar__user-email">{user?.email}</span>
+              <span className="navbar__user-name" aria-hidden="true">
+                {name}
               </span>
               <ChevronIcon />
             </button>
 
             {menuOpen && (
               <div className="navbar__menu" role="menu">
+                <div className="navbar__menu-header" role="presentation">
+                  <span className="navbar__menu-name">{name}</span>
+                  <span className="navbar__menu-email">{user?.email}</span>
+                </div>
+                <div className="navbar__menu-divider" role="separator" />
                 <Link to="/profile" role="menuitem" className="navbar__menu-item" onClick={() => setMenuOpen(false)}>
                   Profile
                 </Link>
@@ -155,20 +149,11 @@ export default function Navbar() {
             </NavLink>
           ))}
           <Button as={Link} to="/lectures/new" className="navbar__mobile-upload">
-            Upload Lecture
+            Add Lecture
           </Button>
         </nav>
       )}
     </header>
-  );
-}
-
-function BellIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
-      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-    </svg>
   );
 }
 

@@ -7,6 +7,7 @@ import EmptyState from "../../components/ui/EmptyState";
 import ErrorState from "../../components/ui/ErrorState";
 import Modal from "../../components/ui/Modal";
 import Select from "../../components/ui/Select";
+import Skeleton from "../../components/ui/Skeleton";
 import { useToast } from "../../components/ui/Toast";
 import { ArrowRightIcon, ChevronDownIcon, ChevronUpIcon, ClockIcon, SearchIcon, TrashIcon } from "../../components/ui/icons";
 import { useAsyncData } from "../../hooks/useAsyncData";
@@ -124,7 +125,8 @@ export default function History() {
         if (resetPage) next.delete("page");
         return next;
       },
-      { replace: true }
+      // Filtering keeps the reader where they are on the page.
+      { replace: true, preventScrollReset: true }
     );
   }
 
@@ -201,9 +203,18 @@ export default function History() {
       </section>
 
       {history.status === "loading" && !data && (
-        <p className="history-status" role="status">
-          Loading your questions…
-        </p>
+        <div className="history-skeletons">
+          <span className="visually-hidden" role="status">
+            Loading your questions…
+          </span>
+          {[0, 1, 2, 3].map((key) => (
+            <div key={key} className="history-skeleton" aria-hidden="true">
+              <Skeleton width="45%" height={15} />
+              <Skeleton width="90%" height={12} />
+              <Skeleton width={260} height={11} />
+            </div>
+          ))}
+        </div>
       )}
       {history.status === "error" && <ErrorState title="We couldn't load your question history." error={history.error} onRetry={history.reload} />}
 

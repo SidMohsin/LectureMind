@@ -26,3 +26,31 @@
 .footer__tagline {
   color: var(--color-text-tertiary);
 }
+
+.footer__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+}
+
+.footer__links a {
+  color: var(--color-text-secondary);
+}
+
+.footer__links a:hover {
+  color: var(--color-text-primary);
+  text-decoration: none;
+}
+
+.footer__note {
+  color: var(--color-text-tertiary);
+  font-size: var(--fs-meta);
+}
+
+@media (max-width: 720px) {
+  .footer__inner {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: var(--space-6) var(--space-4);
+  }
+}

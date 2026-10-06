@@ -26,20 +26,14 @@
 }
 
 .lecture-tile {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  aspect-ratio: 16 / 10;
+  display: block;
+  container-type: inline-size;
   border-radius: var(--radius-md);
-  background: var(--color-surface-sunken);
-  color: var(--color-accent);
-  overflow: hidden;
 }
 
-.lecture-tile--failed {
-  color: var(--color-error);
-  background: var(--color-error-bg);
+.lecture-tile__art {
+  aspect-ratio: 16 / 9;
+  width: 100%;
 }
 
 .lecture-tile__type {
@@ -49,8 +43,41 @@
 }
 
 .lecture-tile__type .badge {
-  background: var(--color-surface);
+  background: rgba(255, 255, 255, 0.94);
   color: var(--color-text-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.lecture-tile__play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  padding-left: 2px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--color-accent);
+  box-shadow: var(--shadow-md);
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.9);
+  transition: opacity var(--transition-base), transform var(--transition-base);
+}
+
+.lecture-item:hover .lecture-tile__play {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.lecture-tile img {
+  transition: transform 400ms ease;
+}
+
+.lecture-item:hover .lecture-tile img {
+  transform: scale(1.03);
 }
 
 .lecture-tile__duration {
@@ -226,8 +253,8 @@
   .lecture-item--list {
     grid-template-columns: 1fr;
   }
-  .lecture-item--list .lecture-tile {
-    aspect-ratio: 16 / 7;
+  .lecture-item--list .lecture-tile__art {
+    aspect-ratio: 16 / 9;
   }
   .lecture-item__side {
     flex-wrap: wrap;

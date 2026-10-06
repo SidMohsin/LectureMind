@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { citationStart, chunkTimeMap, findChapterIndex, formatClock } from "../../workspace/timeline";
+import { readableParagraphs } from "../../workspace/text";
 import "./IntelligencePanel.css";
 
 /** A lecture timestamp that seeks the player. */
@@ -83,7 +84,7 @@ export default function IntelligencePanel({ intelligence, chapters, chunks, curr
     );
   }
 
-  const paragraphs = intelligence.summary.split(/\n\s*\n/).map((text) => text.trim()).filter(Boolean);
+  const paragraphs = readableParagraphs(intelligence.summary);
 
   return (
     <section className="intel" aria-label="Lecture intelligence">
